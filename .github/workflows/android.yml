@@ -16,11 +16,19 @@ on:
 permissions:
   contents: write
 
+# satu build per waktu agar nomor versi tidak bentrok
+concurrency:
+  group: build-apk
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
       - uses: actions/setup-node@v4
         with:
@@ -37,12 +45,31 @@ jobs:
 
       - name: Tentukan versi
         id: ver
+        env:
+          INPUT_VERSI: ${{ inputs.versi }}
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then V="${GITHUB_REF_NAME#v}";
-          elif [ -n "${{ inputs.versi }}" ]; then V="${{ inputs.versi }}"; V="${V#v}";
-          else V="0.0.${{ github.run_number }}"; fi
+          LAST=$(git tag -l 'v*' --sort=-v:refname | head -1)
+          PKG=$(node -p "require('./package.json').version")
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            V="${GITHUB_REF_NAME#v}"
+          elif [ -n "$INPUT_VERSI" ]; then
+            V="${INPUT_VERSI#v}"
+          elif [ -z "$LAST" ]; then
+            V="$PKG"
+          else
+            IFS=. read -r MA MI PA <<< "${LAST#v}"
+            V="$MA.$MI.$((PA + 1))"
+            # naikkan versi minor/mayor dengan mengubah "version" di package.json
+            if [ "$(printf '%s\n%s\n' "$V" "$PKG" | sort -V | tail -1)" = "$PKG" ] && [ "$PKG" != "${LAST#v}" ]; then V="$PKG"; fi
+          fi
           echo "name=$V" >> "$GITHUB_OUTPUT"
-          echo "Versi: $V (kode ${{ github.run_number }})"
+          echo "last=$LAST" >> "$GITHUB_OUTPUT"
+          {
+            echo 'notes<<CATATAN_EOF'
+            if [ -n "$LAST" ]; then git log --pretty='- %s' "$LAST..HEAD"; else git log --pretty='- %s' -n 20; fi
+            echo 'CATATAN_EOF'
+          } >> "$GITHUB_OUTPUT"
+          echo "Versi: $V (kode ${{ github.run_number }}), tag terakhir: ${LAST:-tidak ada}"
 
       - name: Buat proyek Android (Capacitor)
         run: |
@@ -107,8 +134,8 @@ jobs:
           name: LokiChart-apk
           path: LokiChart-v*.apk
 
-      - name: Rilis ke GitHub Releases (tag v* atau input versi)
-        if: startsWith(github.ref, 'refs/tags/v') || inputs.versi != ''
+      - name: Rilis ke GitHub Releases (setiap push ke main, tag v*, atau input versi)
+        if: github.event_name == 'push' || github.event_name == 'release' || inputs.versi != ''
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.ver.outputs.name }}
@@ -116,6 +143,10 @@ jobs:
           target_commitish: ${{ github.sha }}
           generate_release_notes: true
           body: |
+            ### Perubahan
+            ${{ steps.ver.outputs.notes }}
+
+            ### Cara install
             APK Android LokiChart. Unduh file **LokiChart-v${{ steps.ver.outputs.name }}.apk** di bawah lalu install di HP
             (izinkan "instal dari sumber tidak dikenal" bila diminta).
             Isi kredensial OANDA / FOREX.com di aplikasi lewat ikon ⚙.

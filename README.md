@@ -9,10 +9,11 @@ APK di-build otomatis oleh **GitHub Actions** (`.github/workflows/android.yml`) 
 **Mengunduh APK:** buka halaman **Releases** repo ini dan unduh `LokiChart-vX.Y.Z.apk`.
 Build dari setiap push ke `main` juga tersedia di tab **Actions** → *Build APK Android* → **Artifacts** (zip).
 
-**Membuat rilis baru** (APK otomatis muncul di Releases) — pilih salah satu:
-- Dari HP/browser: tab **Actions** → *Build APK Android* → **Run workflow** → isi *Versi rilis* (mis. `1.1.0`) → **Run workflow**.
-- Dari halaman **Releases** → **Draft a new release** → buat tag baru (mis. `v1.1.0`) → **Publish release**. APK ditambahkan otomatis beberapa menit kemudian.
-- Dari git: `git tag v1.1.0 && git push origin v1.1.0`.
+**Rilis otomatis:** setiap push ke `main` otomatis membuat rilis baru di **Releases** dengan versi yang naik sendiri
+(`v1.0.0` → `v1.0.1` → `v1.0.2` …), lengkap dengan daftar perubahan dan file APK.
+
+- Untuk menaikkan versi minor/mayor (mis. ke `1.1.0` atau `2.0.0`), ubah `"version"` di `package.json`; rilis berikutnya memakai versi itu lalu lanjut naik dari sana.
+- Bisa juga manual: tab **Actions** → *Build APK Android* → **Run workflow** → isi *Versi rilis*.
 
 Nomor versi dipakai sebagai `versionName` APK, dan `versionCode` naik otomatis sehingga APK baru bisa meng-update yang lama.
 
