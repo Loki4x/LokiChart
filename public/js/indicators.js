@@ -337,3 +337,36 @@ export function indicatorLabel(inst) {
   const vals = def.params.filter(p => p.type === 'number').map(p => inst.params[p.key]);
   return `${def.short}${vals.length ? ' ' + vals.join(', ') : ''}`;
 }
+
+// ---------- Ringkasan teknikal (meter Jual kuat … Beli kuat) ----------
+// Skor -1..1 dari rata-rata bergerak dan osilator pada candle yang diberikan.
+export function technicalRating(c) {
+  if (c.length < 30) return null;
+  const close = c.map(x => x.c), last = close[close.length - 1], n = c.length - 1;
+  const vote = (b, s) => (b ? 1 : s ? -1 : 0);
+  const ma = [];
+  for (const p of [10, 20, 30, 50, 100, 200]) {
+    if (c.length <= p) continue;
+    const s = sma(close, p)[n], e = ema(close, p)[n];
+    if (s != null) ma.push(vote(last > s, last < s));
+    if (e != null) ma.push(vote(last > e, last < e));
+  }
+  const osc = [];
+  const r = INDICATORS.rsi.calc(c, { period: 14, ob: 70, os: 30 }).lines[0].v;
+  osc.push(vote(r[n] < 30 && r[n] > r[n - 1], r[n] > 70 && r[n] < r[n - 1]));
+  const st = INDICATORS.stoch.calc(c, { k: 14, smooth: 3, d: 3 }).lines;
+  osc.push(vote(st[0].v[n] < 20 && st[0].v[n] > st[1].v[n], st[0].v[n] > 80 && st[0].v[n] < st[1].v[n]));
+  const cci = INDICATORS.cci.calc(c, { period: 20 }).lines[0].v;
+  osc.push(vote(cci[n] < -100 && cci[n] > cci[n - 1], cci[n] > 100 && cci[n] < cci[n - 1]));
+  const m = INDICATORS.macd.calc(c, { fast: 12, slow: 26, signal: 9 }).lines;
+  osc.push(vote(m[0].v[n] > m[1].v[n], m[0].v[n] < m[1].v[n]));
+  const mom = close[n] - close[n - 10], momP = close[n - 1] - close[n - 11];
+  osc.push(vote(mom > momP, mom < momP));
+  const avg = a => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
+  const count = a => ({ buy: a.filter(v => v > 0).length, sell: a.filter(v => v < 0).length, neutral: a.filter(v => v === 0).length });
+  const sMa = avg(ma), sOsc = avg(osc), score = (sMa + sOsc) / 2;
+  return { score, ma: { score: sMa, ...count(ma) }, osc: { score: sOsc, ...count(osc) }, label: ratingLabel(score) };
+}
+export function ratingLabel(s) {
+  return s <= -0.5 ? 'Jual kuat' : s < -0.1 ? 'Jual' : s <= 0.1 ? 'Netral' : s < 0.5 ? 'Beli' : 'Beli kuat';
+}

@@ -8,6 +8,8 @@ const rgba = (hex, a) => {
   const n = parseInt(hex.slice(1), 16);
   return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`;
 };
+// warna isi: ikuti pengaturan "Latar belakang" di dialog pengaturan gambar
+export const fillOf = (d, a = 0.15) => d.style.fillOn === false ? 'rgba(0,0,0,0)' : d.style.fill || rgba(d.style.color, a);
 const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
 const lerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
 const fmtN = (v, k = 3) => (Math.round(v * 10 ** k) / 10 ** k).toString();
@@ -33,14 +35,17 @@ function priceTag(g, x, y, s, color, align = 'left') {
 const FIB_RET = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.618, 2.618, 3.618, 4.236];
 const FIB_EXT = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.618, 2.618];
 
-function fibLevels(g, c, xs, x1, levels, priceOf, extendRight) {
+export function defaultLevels(vals) { return vals.map((v, k) => ({ v, on: true, color: LV[k % LV.length] })); }
+function fibLevels(g, c, xs, x1, levels, priceOf, d) {
+  const ext = d.opt?.extend || (d.extend ? 'right' : 'none');
+  const x0 = ext === 'left' || ext === 'both' ? 0 : xs, xe = ext === 'right' || ext === 'both' ? c.plot.w : x1;
   let prevY = null;
-  levels.forEach((lv, k) => {
-    const p = priceOf(lv), y = c.py(p), col = LV[k % LV.length];
-    const xe = extendRight ? c.plot.w : x1;
-    g.seg({ x: xs, y }, { x: xe, y }, { color: col, dash: [] });
-    if (prevY !== null) g.area([{ x: xs, y: prevY }, { x: xe, y: prevY }, { x: xe, y }, { x: xs, y }], rgba(col, 0.12));
-    priceTag(g, xs + 4, y, `${lv} (${c.fmt(p)})`, col);
+  const showBg = d.style.fillOn !== false;
+  levels.filter(l => l.on).sort((a, b) => a.v - b.v).forEach(l => {
+    const p = priceOf(l.v), y = c.py(p), col = l.color;
+    g.seg({ x: x0, y }, { x: xe, y }, { color: col, dash: [] });
+    if (prevY !== null && showBg) g.area([{ x: x0, y: prevY }, { x: xe, y: prevY }, { x: xe, y }, { x: x0, y }], rgba(col, 0.12));
+    if (d.opt?.labels !== false) priceTag(g, xs + 4, y, `${l.v} (${c.fmt(p)})`, col);
     prevY = y;
   });
 }
@@ -138,19 +143,10 @@ export const UTILITIES = [
 
 export const TOOLS = {
   // ===================== PERALATAN TREN =====================
-  trendline: { name: 'Garis Tren', cat: 'tren', n: 2, icon: I.trend, build: (g, P) => g.seg(P[0], P[1]) },
-  ray: { name: 'Sinar', cat: 'tren', n: 2, icon: I.ray, build: (g, P) => g.ray(P[0], P[1]) },
-  infoline: {
-    name: 'Garis Info', cat: 'tren', n: 2, icon: I.info,
-    build(g, [a, b], d, c) {
-      g.seg(a, b);
-      const dp = b.p - a.p, bars = Math.round(b.i - a.i);
-      const ang = (Math.atan2(a.y - b.y, b.x - a.x) * 180) / Math.PI;
-      const lines = [`${c.fmt(dp)} (${pct(a.p, b.p).toFixed(2)}%)`, `${bars} bar, ${c.dur(bars)}`, `${ang.toFixed(1)}°`];
-      lines.forEach((s, k) => g.text(b.x + 10, b.y + (k - 1) * 18, s, { bg: 'rgba(30,34,45,.85)', color: '#fff', font: '11px system-ui' }));
-    },
-  },
-  extended: { name: 'Garis Perpanjangan', cat: 'tren', n: 2, icon: I.ext, build: (g, P) => g.line(P[0], P[1]) },
+  trendline: { name: 'Garis Tren', cat: 'tren', n: 2, icon: I.trend, line: true, build: lineTool },
+  ray: { name: 'Sinar', cat: 'tren', n: 2, icon: I.ray, line: true, defOpt: { extend: 'right' }, build: lineTool },
+  infoline: { name: 'Garis Info', cat: 'tren', n: 2, icon: I.info, line: true, defOpt: { stats: 'full', alwaysStats: true }, build: lineTool },
+  extended: { name: 'Garis Perpanjangan', cat: 'tren', n: 2, icon: I.ext, line: true, defOpt: { extend: 'both' }, build: lineTool },
   trendangle: {
     name: 'Sudut Tren', cat: 'tren', n: 2, icon: I.angle,
     build(g, [a, b]) {
@@ -181,7 +177,7 @@ export const TOOLS = {
       const t = b.x !== a.x ? (c3.x - a.x) / (b.x - a.x) : 0;
       const off = c3.y - (a.y + (b.y - a.y) * t);
       const a2 = { x: a.x, y: a.y + off }, b2 = { x: b.x, y: b.y + off };
-      g.area([a, b, b2, a2], rgba(d.style.color, 0.1));
+      g.area([a, b, b2, a2], fillOf(d, 0.1));
       g.seg(a, b).seg(a2, b2).seg(mid(a, a2), mid(b, b2), { dash: [5, 5] });
     },
   },
@@ -212,7 +208,7 @@ export const TOOLS = {
     build(g, [a, b, c3], d) {
       if (!c3) return g.seg(a, b);
       const a2 = { x: a.x, y: c3.y }, b2 = { x: b.x, y: c3.y };
-      g.area([a, b, b2, a2], rgba(d.style.color, 0.1));
+      g.area([a, b, b2, a2], fillOf(d, 0.1));
       g.seg(a, b).seg(a2, b2);
     },
   },
@@ -221,7 +217,7 @@ export const TOOLS = {
     build(g, [a, b, c3], d) {
       if (!c3) return g.seg(a, b);
       const a2 = { x: a.x, y: c3.y }, b2 = { x: b.x, y: c3.y - (b.y - a.y) };
-      g.area([a, b, b2, a2], rgba(d.style.color, 0.1));
+      g.area([a, b, b2, a2], fillOf(d, 0.1));
       g.seg(a, b).seg(a2, b2);
     },
   },
@@ -232,19 +228,19 @@ export const TOOLS = {
 
   // ===================== GANN & FIBONACCI =====================
   fibret: {
-    name: 'Fib Retracement', cat: 'fib', n: 2, icon: I.fibret,
+    name: 'Fib Retracement', cat: 'fib', n: 2, fib: FIB_RET.slice(0, 9), icon: I.fibret,
     build(g, [a, b], d, c) {
       g.seg(a, b, { dash: [4, 4], color: '#787b86' });
-      fibLevels(g, c, Math.min(a.x, b.x), Math.max(a.x, b.x), FIB_RET.slice(0, 9), lv => b.p + (a.p - b.p) * lv, d.extend);
+      fibLevels(g, c, Math.min(a.x, b.x), Math.max(a.x, b.x), d.opt?.levels || defaultLevels(FIB_RET.slice(0, 9)), lv => b.p + (a.p - b.p) * lv, d);
     },
   },
   fibext: {
-    name: 'Fib Ekstensi Berbasis Tren', cat: 'fib', n: 3, icon: I.fibext,
+    name: 'Fib Ekstensi Berbasis Tren', cat: 'fib', n: 3, fib: FIB_EXT, icon: I.fibext,
     build(g, [a, b, c3], d, c) {
       g.seg(a, b, { dash: [4, 4], color: '#787b86' });
       if (!c3) return;
       g.seg(b, c3, { dash: [4, 4], color: '#787b86' });
-      fibLevels(g, c, Math.min(b.x, c3.x), Math.max(b.x, c3.x) + 40, FIB_EXT, lv => c3.p + (b.p - a.p) * lv, d.extend);
+      fibLevels(g, c, Math.min(b.x, c3.x), Math.max(b.x, c3.x) + 40, d.opt?.levels || defaultLevels(FIB_EXT), lv => c3.p + (b.p - a.p) * lv, d);
     },
   },
   fibchannel: {
@@ -423,8 +419,8 @@ export const TOOLS = {
     name: 'Motif XABCD', cat: 'motif', n: 5, icon: I.xabcd,
     build(g, P, d) {
       const [X, A, B, C, D] = P;
-      if (B) g.area([X, A, B], rgba(d.style.color, 0.15));
-      if (D) g.area([B, C, D], rgba(d.style.color, 0.15));
+      if (B) g.area([X, A, B], fillOf(d, 0.15));
+      if (D) g.area([B, C, D], fillOf(d, 0.15));
       g.poly(P);
       if (B) g.seg(X, B, { dash: [4, 4] });
       if (D) { g.seg(B, D, { dash: [4, 4] }); g.seg(X, D, { dash: [4, 4] }); }
@@ -438,8 +434,8 @@ export const TOOLS = {
     name: 'Motif Cypher', cat: 'motif', n: 5, icon: I.cypher,
     build(g, P, d) {
       const [X, A, B, C, D] = P;
-      if (B) g.area([X, A, B], rgba(d.style.color, 0.15));
-      if (D) g.area([B, C, D], rgba(d.style.color, 0.15));
+      if (B) g.area([X, A, B], fillOf(d, 0.15));
+      if (D) g.area([B, C, D], fillOf(d, 0.15));
       g.poly(P);
       if (B) ratioLabel(g, X, B, Math.abs((B.p - A.p) / (A.p - X.p)));
       if (C) ratioLabel(g, A, C, Math.abs((C.p - X.p) / (A.p - X.p)));
@@ -453,7 +449,7 @@ export const TOOLS = {
       g.poly(P);
       if (P[4]) {
         g.line(P[2], P[4], { dash: [5, 4] });
-        g.area([P[1], P[2], P[4], P[5] || P[4]].filter(Boolean), rgba(d.style.color, 0.1));
+        g.area([P[1], P[2], P[4], P[5] || P[4]].filter(Boolean), fillOf(d, 0.1));
       }
       labelPoints(g, P, ['', 'Bahu Kiri', '', 'Kepala', '', 'Bahu Kanan', ''], d);
     },
@@ -475,7 +471,7 @@ export const TOOLS = {
       if (P[2]) g.seg(P[0], P[2], { dash: [4, 4] });
       if (P[3]) {
         g.seg(P[1], P[3], { dash: [4, 4] });
-        g.area([P[0], P[1], P[3], P[2]], rgba(d.style.color, 0.12));
+        g.area([P[0], P[1], P[3], P[2]], fillOf(d, 0.12));
       }
       labelPoints(g, P, ['A', 'B', 'C', 'D'], d);
     },
@@ -513,7 +509,7 @@ export const TOOLS = {
       const kMax = Math.ceil((c.xi(c.plot.w) - a.i) / s) + 1;
       for (let k = 0; k <= kMax; k++) {
         const cx = c.ix(a.i + s * k) + r;
-        g.arc({ x: cx, y: a.y }, r, Math.PI, Math.PI * 2, { fill: rgba(d.style.color, 0.08) });
+        g.arc({ x: cx, y: a.y }, r, Math.PI, Math.PI * 2, { fill: fillOf(d, 0.08) });
       }
       g.hline(a.y, a.x, c.plot.w, { dash: [3, 3], width: 1 });
     },
@@ -601,7 +597,7 @@ export const TOOLS = {
   highlighter: {
     name: 'Stabilo', cat: 'kuas', n: 0, freehand: true, icon: 'M4 20H12 M7 16L15 4L20 8L12 20Z',
     defStyle: { color: '#ffeb3b', width: 3, dash: [] },
-    build: (g, P, d) => g.poly(P, { width: d.style.width * 5, color: rgba(d.style.color, 0.4) }),
+    build: (g, P, d) => g.poly(P, { width: d.style.width * 5, color: fillOf(d, 0.4) }),
   },
 
   // ===================== TEKS DAN CATATAN =====================
@@ -639,8 +635,8 @@ export const TOOLS = {
     name: 'Komentar', cat: 'teks', n: 1, needsText: true, icon: 'M4 4H20V16H9L4 20Z',
     build(g, [a], d) {
       const t = d.text || 'Komentar';
-      g.text(a.x + 4, a.y - 14, t, { color: '#131722', bg: rgba(d.style.color, 0.25), font: '12px system-ui', hit: true });
-      g.poly([a, { x: a.x + 4, y: a.y - 6 }, { x: a.x + 12, y: a.y - 6 }], { fill: rgba(d.style.color, 0.25), close: true, stroke: false });
+      g.text(a.x + 4, a.y - 14, t, { color: '#131722', bg: fillOf(d, 0.25), font: '12px system-ui', hit: true });
+      g.poly([a, { x: a.x + 4, y: a.y - 6 }, { x: a.x + 12, y: a.y - 6 }], { fill: fillOf(d, 0.25), close: true, stroke: false });
     },
   },
   arrowup: {
@@ -662,20 +658,20 @@ export const TOOLS = {
       const dv = dir(a, b); if (!dv) return;
       const nx = -dv.y, ny = dv.x, off = (c3.x - a.x) * nx + (c3.y - a.y) * ny;
       const pts = [a, b, { x: b.x + nx * off, y: b.y + ny * off }, { x: a.x + nx * off, y: a.y + ny * off }];
-      g.area(pts, rgba(d.style.color, 0.15)).poly([...pts, a]);
+      g.area(pts, fillOf(d, 0.15)).poly([...pts, a]);
     },
   },
   circle: {
     name: 'Lingkaran', cat: 'bentuk', n: 2, icon: 'M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0',
-    build: (g, [a, b], d) => g.circle(a, Math.hypot(b.x - a.x, b.y - a.y), { fill: rgba(d.style.color, 0.15) }),
+    build: (g, [a, b], d) => g.circle(a, Math.hypot(b.x - a.x, b.y - a.y), { fill: fillOf(d, 0.15) }),
   },
   triangle: {
     name: 'Segitiga', cat: 'bentuk', n: 3, icon: 'M12 3L22 20H2Z',
-    build: (g, P, d) => P.length < 3 ? g.seg(P[0], P[1]) : g.area(P, rgba(d.style.color, 0.15)).poly([...P, P[0]]),
+    build: (g, P, d) => P.length < 3 ? g.seg(P[0], P[1]) : g.area(P, fillOf(d, 0.15)).poly([...P, P[0]]),
   },
   arcshape: {
     name: 'Busur', cat: 'bentuk', n: 3, icon: 'M3 18Q12 0 21 18',
-    build: (g, P, d) => P.length < 3 ? g.seg(P[0], P[1]) : g.poly(quad(P[0], ctrlThrough(P[0], P[2], P[1]), P[2]), { fill: rgba(d.style.color, 0.12), close: true }),
+    build: (g, P, d) => P.length < 3 ? g.seg(P[0], P[1]) : g.poly(quad(P[0], ctrlThrough(P[0], P[2], P[1]), P[2]), { fill: fillOf(d, 0.12), close: true }),
   },
   curve: {
     name: 'Kurva', cat: 'bentuk', n: 3, icon: 'M3 18Q8 2 21 12',
@@ -691,19 +687,19 @@ export const TOOLS = {
   },
   polyline: {
     name: 'Polyline', cat: 'bentuk', n: Infinity, icon: 'M3 18L8 6L16 9L21 19Z',
-    build: (g, P, d) => P.length > 2 ? g.area(P, rgba(d.style.color, 0.12)).poly([...P, P[0]]) : g.poly(P),
+    build: (g, P, d) => P.length > 2 ? g.area(P, fillOf(d, 0.12)).poly([...P, P[0]]) : g.poly(P),
   },
 
   // ===================== BENTUK & TEKS (lama) =====================
   rect: {
     name: 'Persegi Panjang', cat: 'bentuk', n: 2, icon: I.rect,
-    build: (g, [a, b], d) => g.area([a, { x: b.x, y: a.y }, b, { x: a.x, y: b.y }], rgba(d.style.color, 0.15)).poly([a, { x: b.x, y: a.y }, b, { x: a.x, y: b.y }, a]),
+    build: (g, [a, b], d) => g.area([a, { x: b.x, y: a.y }, b, { x: a.x, y: b.y }], fillOf(d, 0.15)).poly([a, { x: b.x, y: a.y }, b, { x: a.x, y: b.y }, a]),
   },
   ellipse: {
     name: 'Elips', cat: 'bentuk', n: 2, icon: I.ellipse,
-    build: (g, [a, b], d) => g.ellipse(mid(a, b), (b.x - a.x) / 2, (b.y - a.y) / 2, 0, { fill: rgba(d.style.color, 0.15) }),
+    build: (g, [a, b], d) => g.ellipse(mid(a, b), (b.x - a.x) / 2, (b.y - a.y) / 2, 0, { fill: fillOf(d, 0.15) }),
   },
-  arrow: { name: 'Panah', cat: 'bentuk', n: 2, icon: I.arrow, build: (g, [a, b]) => g.seg(a, b).arrowHead(a, b, 12) },
+  arrow: { name: 'Panah', cat: 'bentuk', n: 2, icon: I.arrow, line: true, defOpt: { rightEnd: 'arrow' }, build: lineTool },
   text: {
     name: 'Teks', cat: 'teks', n: 1, icon: I.text, needsText: true,
     build: (g, [a], d) => g.text(a.x, a.y, d.text || 'Teks', { font: `${(d.style.width || 1) * 4 + 10}px system-ui`, hit: true, dash: [] }),
@@ -729,6 +725,38 @@ function cubic(a, c1, c2, b, n = 48) {
 }
 // titik kontrol agar kurva kuadrat melewati titik m di t=0.5
 function ctrlThrough(a, b, m) { return { x: 2 * m.x - (a.x + b.x) / 2, y: 2 * m.y - (a.y + b.y) / 2 }; }
+
+// ---------- Alat garis generik (Garis Tren, Sinar, Garis Info, Perpanjangan, Panah) ----------
+export const opt = (d, k) => d.opt?.[k] ?? TOOLS[d.tool].defOpt?.[k] ?? OPT_DEF[k];
+const OPT_DEF = { extend: 'none', leftEnd: 'normal', rightEnd: 'normal', middle: false, priceLabels: false, stats: 'hidden', statsPos: 'right', alwaysStats: false };
+function lineTool(g, P, d, c) {
+  const [a, b] = P;
+  if (!b) return;
+  const ext = opt(d, 'extend'), dv = dir(a, b);
+  let s = a, e = b;
+  if (dv && (ext === 'left' || ext === 'both')) s = { x: a.x - dv.x * 1e5, y: a.y - dv.y * 1e5 };
+  if (dv && (ext === 'right' || ext === 'both')) e = { x: b.x + dv.x * 1e5, y: b.y + dv.y * 1e5 };
+  g.seg(s, e);
+  const ah = 8 + d.style.width * 2;
+  if (opt(d, 'rightEnd') === 'arrow') g.arrowHead(a, b, ah, { dash: [] });
+  if (opt(d, 'leftEnd') === 'arrow') g.arrowHead(b, a, ah, { dash: [] });
+  if (opt(d, 'middle')) g.circle(mid(a, b), 3 + d.style.width, { fill: d.style.color });
+  if (opt(d, 'priceLabels')) {
+    g.text(a.x, a.y + (a.y >= b.y ? 12 : -12), c.fmt(a.p), { align: 'center', color: '#fff', bg: d.style.color, font: '11px system-ui' });
+    g.text(b.x, b.y + (b.y > a.y ? 12 : -12), c.fmt(b.p), { align: 'center', color: '#fff', bg: d.style.color, font: '11px system-ui' });
+  }
+  const st = opt(d, 'stats');
+  if (st !== 'hidden' && (opt(d, 'alwaysStats') || c.selected)) {
+    const dp = b.p - a.p, bars = Math.round(b.i - a.i);
+    const ang = (Math.atan2(a.y - b.y, b.x - a.x) * 180) / Math.PI;
+    const lines = [`${c.fmt(dp)} (${pct(a.p, b.p).toFixed(2)}%)`];
+    if (st === 'values' || st === 'full') lines.push(`${bars} bar, ${c.dur(bars)}`);
+    if (st === 'full') lines.push(`${ang.toFixed(1)}°`);
+    const pos = opt(d, 'statsPos'), anchor = pos === 'left' ? a : pos === 'center' ? mid(a, b) : b;
+    const al = pos === 'left' ? 'right' : pos === 'center' ? 'center' : 'left', dx = pos === 'left' ? -12 : pos === 'center' ? 0 : 12;
+    lines.forEach((t, k) => g.text(anchor.x + dx, anchor.y + (k - (lines.length - 1) / 2) * 20, t, { align: al, bg: 'rgba(30,34,45,.88)', color: '#fff', font: '11px system-ui' }));
+  }
+}
 
 function posConstrain(pts) {
   if (pts[2]) pts[2].t = pts[0].t;
@@ -778,7 +806,7 @@ function pitchfork(kind) {
     g.seg(b, c3);
     g.ray(o, m, { color: '#f23645' });
     g.seg(b, far(b)).seg(c3, far(c3));
-    g.area([b, far(b), far(c3), c3], rgba(d.style.color, 0.08));
+    g.area([b, far(b), far(c3), c3], fillOf(d, 0.08));
     if (kind === 'inside') {
       [0.25, 0.75].forEach(t => { const p = lerp(b, c3, t); g.seg(p, far(p), { dash: [4, 4] }); });
     }

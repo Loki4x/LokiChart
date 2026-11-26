@@ -39,6 +39,7 @@ export function dir(a, b) {
 
 export function render(ctx, geo, selected) {
   const st = geo.style;
+  ctx.globalAlpha = st.alpha ?? 1;
   for (const p of geo.prims) {
     const color = p.color || st.color;
     ctx.lineWidth = (p.width || st.width) + (selected && p.k !== 'text' ? 0.5 : 0);
@@ -77,6 +78,7 @@ export function render(ctx, geo, selected) {
     }
   }
   ctx.setLineDash([]);
+  ctx.globalAlpha = 1;
 }
 
 export function roundRect(ctx, x, y, w, h, r) {

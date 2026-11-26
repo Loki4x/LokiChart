@@ -1,5 +1,6 @@
 // Panel ikhtisar simbol: grafik garis per periode, perubahan, poin data penting, dan musiman.
 import { ds } from './datasource.js';
+import { technicalRating } from './indicators.js';
 
 const PERIODS = [
   ['1D', '1H', '5m', 288], ['5D', '5H', '30m', 240], ['1M', '1B', '4h', 186], ['3M', '3B', '1D', 92],
@@ -16,8 +17,8 @@ async function get(broker, symbol, tf, count) {
 }
 
 export class Overview {
-  constructor(el, { fmt, iconHtml, brokers }) {
-    this.el = el; this.fmt = fmt; this.iconHtml = iconHtml; this.brokers = brokers;
+  constructor(el, { fmt, iconHtml, brokers, onOpenChart, onBack }) {
+    this.el = el; this.fmt = fmt; this.iconHtml = iconHtml; this.brokers = brokers; this.onOpenChart = onOpenChart; this.onBack = onBack;
     this.period = '1D'; this.key = null;
   }
   async show(info, broker, livePrice) {
@@ -33,32 +34,43 @@ export class Overview {
         const [daily, all] = await Promise.all([get(broker, info.symbol, '1D', 1100), get(broker, info.symbol, '1W', 2000)]);
         if (this.key !== key) return;
         this.daily = daily.candles; this.all = all.candles;
-        this._price(livePrice); this._stats(); this._season(); this._period();
+        this._price(livePrice); this._stats(); this._season(); this._period(); this._gauge();
       } catch (e) { this.el.querySelector('.ov-err').textContent = 'Gagal memuat ikhtisar: ' + e.message; }
     }
   }
   _skeleton() {
     const { info } = this;
     this.el.innerHTML = `
-      <div style="display:flex;gap:10px;align-items:center">${this.iconHtml(info.symbol)}<div><b>${info.desc}</b><br><small style="color:var(--muted)">${info.symbol} · ${this.brokers[this.broker]}</small></div></div>
+      <div class="ov-head"><button class="icon-btn back" data-ov="back" title="Kembali"><svg class="i" viewBox="0 0 24 24"><path d="M15 5L8 12L15 19"/></svg></button>
+        ${this.iconHtml(info.symbol)}<div><b>${info.desc}</b><br><small style="color:var(--muted)">${info.symbol} · ${this.brokers[this.broker]}</small></div></div>
       <div class="big ov-price">—</div>
       <div class="ov-day"></div>
       <div class="ov-all" style="font-size:12px"></div>
       <div class="periods">${PERIODS.map(([k, l]) => `<button data-p="${k}" class="${k === this.period ? 'on' : ''}">${l}</button>`).join('')}</div>
       <div class="ov-pchg" style="font-size:12px;margin-bottom:4px"></div>
-      <canvas class="ov-line" height="150"></canvas>
+      <canvas class="ov-line" height="170"></canvas>
+      <button class="primary open-chart" data-ov="chart">Buka chart</button>
       <div class="ov-err" style="color:var(--down);font-size:12px"></div>
-      <h4>Poin data penting</h4>
-      <div class="ov-stats"></div>
-      <h4>Musiman</h4>
-      <div class="lgd ov-lgd"></div>
-      <canvas class="ov-season" height="150"></canvas>`;
+      <div class="card"><h4>Poin data penting</h4><div class="ov-stats"></div></div>
+      <div class="card"><h4>Musiman</h4><div class="lgd ov-lgd"></div><canvas class="ov-season" height="150"></canvas></div>
+      <div class="card"><h4>Teknikal</h4><div class="gauge-wrap"><canvas class="ov-gauge" height="150"></canvas><div class="gauge-sub ov-gsub"></div></div>
+        <div class="note" style="text-align:center">Ringkasan dari rata-rata bergerak & osilator pada timeframe harian. Bukan saran investasi.</div></div>`;
     this.el.querySelector('.periods').onclick = e => {
       const p = e.target.dataset.p; if (!p) return;
       this.period = p;
       this.el.querySelectorAll('.periods button').forEach(b => b.classList.toggle('on', b.dataset.p === p));
       this._period();
     };
+    this.el.onclick = e => {
+      const a = e.target.closest('[data-ov]')?.dataset.ov;
+      if (a === 'chart') this.onOpenChart?.(); if (a === 'back') this.onBack?.();
+    };
+  }
+  _gauge() {
+    const r = technicalRating(this.daily || []);
+    const cv = this.el.querySelector('.ov-gauge'); if (!cv || !r) return;
+    drawGauge(cv, r.score, r.label);
+    this.el.querySelector('.ov-gsub').innerHTML = `<span>Rata-rata bergerak<b>${r.ma.buy} beli · ${r.ma.sell} jual</b></span><span>Osilator<b>${r.osc.buy} beli · ${r.osc.sell} jual</b></span>`;
   }
   _price(live) {
     const d = this.daily, dg = this.info.digits;
@@ -119,6 +131,29 @@ export class Overview {
       labels: months.map((m, k) => ({ i: Math.floor((k * 365) / 12), s: k % 3 === 0 ? m : '' })), zero: true, fmt: v => v.toFixed(1) + '%', len: 366,
     });
   }
+}
+
+export function drawGauge(cv, score, label) {
+  const dpr = window.devicePixelRatio || 1, W = cv.clientWidth || 280, H = 150;
+  cv.width = W * dpr; cv.height = H * dpr; cv.style.height = H + 'px';
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+  const dark = document.body.classList.contains('dark');
+  const cx = W / 2, cy = H - 34, R = Math.min(W / 2 - 50, 100);
+  const segs = [['#f23645', 'Jual kuat'], ['#f7525f', 'Jual'], ['#9598a1', 'Netral'], ['#42bda8', 'Beli'], ['#089981', 'Beli kuat']];
+  segs.forEach(([col], k) => {
+    const a0 = Math.PI + (k * Math.PI) / 5 + 0.02, a1 = Math.PI + ((k + 1) * Math.PI) / 5 - 0.02;
+    ctx.strokeStyle = label === segs[k][1] ? col : (dark ? '#363a45' : '#e0e3eb'); ctx.lineWidth = 12; ctx.lineCap = 'butt';
+    ctx.beginPath(); ctx.arc(cx, cy, R, a0, a1); ctx.stroke();
+  });
+  ctx.font = '10.5px system-ui'; ctx.fillStyle = dark ? '#868993' : '#6a6d78'; ctx.textAlign = 'center';
+  ctx.fillText('Jual kuat', cx - R - 6, cy + 16); ctx.fillText('Beli kuat', cx + R + 6, cy + 16);
+  ctx.fillText('Jual', cx - R * 0.82, cy - R * 0.72); ctx.fillText('Beli', cx + R * 0.82, cy - R * 0.72); ctx.fillText('Netral', cx, cy - R - 12);
+  const ang = Math.PI + ((Math.max(-1, Math.min(1, score)) + 1) / 2) * Math.PI;
+  ctx.strokeStyle = dark ? '#d1d4dc' : '#131722'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(ang) * (R - 18), cy + Math.sin(ang) * (R - 18)); ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx, cy, 5, 0, Math.PI * 2); ctx.fillStyle = ctx.strokeStyle; ctx.fill();
+  const col = segs.find(s => s[1] === label)[0];
+  ctx.font = 'bold 16px system-ui'; ctx.fillStyle = col; ctx.fillText(label, cx, cy + 24);
 }
 
 function axisLabels(c, k) {

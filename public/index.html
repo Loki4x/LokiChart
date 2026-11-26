@@ -11,136 +11,152 @@
 </head>
 <body>
   <div id="app">
-    <header id="topbar">
-      <button id="symbolBtn" class="sym-btn" title="Cari simbol">
-        <span id="symIcon" class="sym-icon"></span>
-        <span id="symName">XAUUSD</span>
-        <span id="symBroker" class="broker-chip">OANDA</span>
-      </button>
-      <div id="tfBar" class="seg"></div>
-      <select id="chartType" title="Jenis chart">
-        <option value="candles">Candle</option>
-        <option value="hollow">Candle Kosong</option>
-        <option value="heikin">Heikin Ashi</option>
-        <option value="bars">Bar</option>
-        <option value="line">Garis</option>
-        <option value="area">Area</option>
-      </select>
-      <div class="spacer"></div>
-      <span id="srcBadge" class="src-badge"></span>
-      <button class="icon-btn" id="themeBtn" title="Tema terang/gelap"></button>
-      <button class="icon-btn" id="wlBtn" title="Daftar pantau & ikhtisar"></button>
-      <button class="icon-btn" id="setBtn" title="Pengaturan broker"></button>
-    </header>
-
-    <main id="main">
-      <nav id="rail"></nav>
-      <section id="chartWrap">
-        <div id="charts"></div>
-        <div id="drawBar" class="hidden"></div>
-        <div id="replayBar" class="hidden"></div>
-        <div id="toast" class="toast hidden"></div>
-
-        <!-- Panel alat gambar -->
-        <div id="drawPanel" class="panel hidden">
-          <div class="panel-head">
-            <h2>Gambar</h2>
-            <button class="icon-btn" id="closeDraw" title="Tutup"></button>
-          </div>
-          <div class="search">
-            <span class="search-ico"></span>
-            <input id="toolSearch" placeholder="Cari" />
-          </div>
-          <div id="toolTabs" class="chips"></div>
-          <div id="toolGrid" class="grid"></div>
+    <div id="pages">
+      <!-- ================= DAFTAR PANTAU ================= -->
+      <section id="pg-watch" class="page">
+        <div class="watch-list">
+          <header class="pg-head">
+            <button class="list-title" id="wlTitle">Daftar Pantau ▾</button>
+            <button class="pill" id="wlAdd">+ Tambah simbol</button>
+            <span class="spacer"></span>
+            <button class="icon-btn" id="wlSearch" title="Cari"></button>
+          </header>
+          <div id="wlList"></div>
+          <button class="add-sym" id="wlAdd2">+ Tambah Simbol</button>
         </div>
-
-        <!-- Pohon objek -->
-        <div id="treePanel" class="panel right hidden">
-          <div class="panel-head">
-            <h2>Pohon Objek</h2>
-            <button class="icon-btn" id="closeTree" title="Tutup"></button>
-          </div>
-          <div id="treeList" class="tree"></div>
-        </div>
+        <div class="watch-detail" id="overview"></div>
       </section>
 
-      <aside id="watchlist" class="hidden">
-        <div class="wl-head">
-          <h3>Daftar Pantau</h3>
-          <button class="icon-btn" id="wlAdd" title="Tambah simbol"></button>
-        </div>
-        <div class="wl-cols"><span>Simbol</span><span>Terakhir</span><span>Perb%</span></div>
-        <div id="wlList"></div>
-        <div id="overview"></div>
-      </aside>
-    </main>
+      <!-- ================= CHART ================= -->
+      <section id="pg-chart" class="page">
+        <main id="main">
+          <nav id="rail" class="hidden"></nav>
+          <section id="chartWrap">
+            <div id="charts"></div>
+            <span id="srcBadge" class="src-badge"></span>
+            <div id="drawBar" class="hidden"></div>
+            <div id="toast" class="toast hidden"></div>
 
-    <footer id="bottombar">
-      <div id="recent" class="recent"></div>
-      <div class="bb-tools">
-        <button class="icon-btn" data-bb="draw" title="Alat gambar"></button>
-        <button class="icon-btn" data-bb="ind" title="Indikator"></button>
-        <button class="icon-btn" data-bb="layout" title="Layout chart"></button>
-        <button class="icon-btn" data-bb="alert" title="Alarm harga"></button>
-        <button class="icon-btn" data-bb="replay" title="Replay bar"></button>
-        <button class="icon-btn" data-bb="tree" title="Pohon objek"></button>
-        <span class="bb-sep"></span>
-        <button class="icon-btn" data-bb="undo" title="Batalkan (Ctrl+Z)"></button>
-        <button class="icon-btn" data-bb="redo" title="Ulangi (Ctrl+Y)"></button>
-        <button class="icon-btn" data-bb="full" title="Layar penuh"></button>
-        <button class="icon-btn" data-bb="share" title="Bagikan / simpan gambar chart"></button>
-      </div>
-    </footer>
+            <div id="drawPanel" class="panel hidden">
+              <div class="panel-head"><h2>Gambar</h2><button class="icon-btn" id="closeDraw" title="Tutup"></button></div>
+              <div class="search"><span class="search-ico"></span><input id="toolSearch" placeholder="Cari" /></div>
+              <div id="toolTabs" class="chips"></div>
+              <div id="toolGrid" class="grid"></div>
+            </div>
+
+            <div id="layoutPanel" class="panel hidden">
+              <div class="panel-head"><h2>Layout</h2><button class="icon-btn" id="closeLayout" title="Tutup"></button></div>
+              <button class="pill" id="syncBtn">Sinkronisasi dalam layout ▾</button>
+              <div id="layoutGrid" class="layout-grid"></div>
+            </div>
+
+            <div id="treePanel" class="panel right hidden">
+              <div class="panel-head"><h2>Pohon objek</h2><button class="icon-btn" id="closeTree" title="Tutup"></button></div>
+              <div id="treeList" class="tree"></div>
+            </div>
+
+            <div id="alertPanel" class="panel right hidden">
+              <div class="panel-head"><h2>Peringatan</h2><button class="icon-btn" id="closeAlert" title="Tutup"></button></div>
+              <div class="search"><span class="search-ico"></span><input id="alertSearch" placeholder="Pencarian peringatan" /></div>
+              <div class="seg2"><button data-at="list" class="on">Daftar</button><button data-at="log">Log</button></div>
+              <div id="alertList" class="tree"></div>
+              <button id="newAlert" class="primary block">Buat peringatan</button>
+            </div>
+
+            <div id="hubPanel" class="panel right hidden">
+              <div class="panel-head"><h2>Pusat analisis</h2><button class="icon-btn" id="closeHub" title="Tutup"></button></div>
+              <div id="hubBody"></div>
+            </div>
+          </section>
+        </main>
+        <div id="replayBar" class="hidden"></div>
+        <footer id="bottombar">
+          <div class="bb-sym">
+            <button id="symbolBtn" title="Ganti simbol"><b id="symName">XAUUSD</b></button>
+            <button id="tfBtn" title="Ganti timeframe">5m</button>
+          </div>
+          <div class="bb-tools">
+            <button class="icon-btn" data-bb="draw" title="Gambar"></button>
+            <button class="icon-btn" data-bb="ind" title="Indikator"></button>
+            <button class="icon-btn" data-bb="layout" title="Layout"></button>
+            <button class="icon-btn" data-bb="alert" title="Peringatan"></button>
+            <button class="icon-btn" data-bb="type" title="Jenis chart"></button>
+            <button class="icon-btn" data-bb="replay" title="Replay bar"></button>
+            <button class="icon-btn" data-bb="tree" title="Pohon objek"></button>
+            <button class="icon-btn" data-bb="more" title="Pusat analisis"></button>
+            <span class="bb-sep"></span>
+            <button class="icon-btn" data-bb="undo" title="Batalkan"></button>
+            <button class="icon-btn" data-bb="redo" title="Ulangi"></button>
+            <button class="icon-btn" data-bb="full" title="Layar penuh"></button>
+            <button class="icon-btn" data-bb="share" title="Bagikan"></button>
+          </div>
+        </footer>
+      </section>
+
+      <!-- ================= JELAJAHI ================= -->
+      <section id="pg-explore" class="page">
+        <header class="pg-head"><h1>Jelajahi</h1><span class="spacer"></span><select id="exBroker"><option value="oanda">OANDA</option><option value="forexcom">FOREX.com</option></select></header>
+        <div id="exploreBody" class="pg-body"></div>
+      </section>
+
+      <!-- ================= MENU ================= -->
+      <section id="pg-menu" class="page">
+        <header class="pg-head"><h1>Menu</h1></header>
+        <div id="menuBody" class="pg-body"></div>
+      </section>
+    </div>
+
+    <nav id="tabbar">
+      <button data-page="watch"><span></span>Daftar Pantau</button>
+      <button data-page="chart"><span></span>Chart</button>
+      <button data-page="explore"><span></span>Jelajahi</button>
+      <button data-page="menu"><span></span>Menu</button>
+    </nav>
   </div>
 
-  <!-- Menu popup serbaguna -->
   <div id="popMenu" class="menu hidden"></div>
 
-  <!-- Modal pencarian simbol -->
+  <!-- Pencarian simbol -->
   <div id="searchModal" class="modal hidden">
     <div class="modal-box">
       <div class="modal-search">
         <button class="icon-btn" id="closeSearch" title="Kembali"></button>
-        <input id="symSearch" placeholder="Cari simbol, mis. XAUUSD" autocomplete="off" />
+        <input id="symSearch" placeholder="Simbol atau nama, mis. XAUUSD" autocomplete="off" />
       </div>
       <div id="symTabs" class="chips"></div>
       <div id="symList" class="sym-list"></div>
     </div>
   </div>
 
-  <!-- Modal indikator -->
+  <!-- Indikator, metrik dan strategi -->
   <div id="indModal" class="modal hidden">
-    <div class="modal-box">
-      <div class="panel-head"><h2>Indikator</h2><button class="icon-btn" id="closeInd" title="Tutup"></button></div>
-      <div class="search"><span class="search-ico"></span><input id="indSearch" placeholder="Cari indikator" /></div>
-      <div id="indList" class="sym-list"></div>
+    <div class="modal-box wide">
+      <div class="panel-head"><h2>Indikator, metrik dan strategi</h2><button class="icon-btn" id="closeInd" title="Tutup"></button></div>
+      <div class="search"><span class="search-ico"></span><input id="indSearch" placeholder="Cari" /></div>
+      <div class="ind-wrap">
+        <aside id="indNav" class="ind-nav"></aside>
+        <div class="ind-main"><div id="indChips" class="chips"></div><div id="indList" class="sym-list"></div></div>
+      </div>
     </div>
   </div>
 
-  <!-- Modal pengaturan indikator / form umum -->
+  <!-- Form generik -->
   <div id="formModal" class="modal hidden">
     <div class="modal-box settings">
       <div class="panel-head"><h2 id="formTitle"></h2><button class="icon-btn" id="closeForm" title="Tutup"></button></div>
+      <div id="formTabs" class="dtabs hidden"></div>
       <div id="formBody"></div>
       <div class="form-actions" id="formActions"></div>
     </div>
   </div>
 
-  <!-- Modal alarm -->
-  <div id="alertModal" class="modal hidden">
-    <div class="modal-box">
-      <div class="panel-head"><h2>Alarm Harga</h2><button class="icon-btn" id="closeAlert" title="Tutup"></button></div>
-      <p class="note">Alarm diperiksa selama aplikasi terbuka (termasuk saat berjalan di latar belakang sebentar). Di Android, alarm muncul sebagai notifikasi.</p>
-      <button id="newAlert" class="primary">+ Buat alarm</button>
-      <div id="alertList" class="sym-list"></div>
-    </div>
-  </div>
+  <!-- Pengaturan gambar -->
+  <div id="drawSettings" class="modal center hidden"><div class="modal-box settings ds-box"></div></div>
 
-  <!-- Modal pengaturan broker -->
+  <!-- Pengaturan broker -->
   <div id="settingsModal" class="modal hidden">
     <div class="modal-box settings">
-      <div class="panel-head"><h2>Pengaturan Broker</h2><button class="icon-btn" id="closeSet" title="Tutup"></button></div>
+      <div class="panel-head"><h2>Akun Broker</h2><button class="icon-btn" id="closeSet" title="Tutup"></button></div>
       <p id="setNote" class="note"></p>
       <h3>OANDA</h3>
       <label>Token API<input id="oandaKey" type="password" autocomplete="off" /></label>

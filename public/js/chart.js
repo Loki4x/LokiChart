@@ -13,6 +13,12 @@ export const THEMES = {
   dark: { bg: '#131722', grid: '#1e222d', text: '#d1d4dc', axisText: '#b2b5be', up: '#089981', down: '#f23645', wick: null, cross: '#758696', crossBg: '#363a45', line: '#2962ff' },
 };
 
+export const DEFAULT_CS = {
+  upColor: '#089981', downColor: '#f23645', body: true, border: true, wick: true,
+  upBorder: '#089981', downBorder: '#f23645', upWick: '#089981', downWick: '#f23645',
+  prevClose: false, priceLine: true, countdown: true, grid: true, bg: '', legend: true,
+};
+
 export class Chart {
   constructor(el) {
     this.el = el;
@@ -34,6 +40,8 @@ export class Chart {
     this.alerts = []; // [{ id, price, cond, active }]
     this.replay = null; // { full, idx }
     this.hideStudies = false;
+    this.cs = { ...DEFAULT_CS }; // gaya chart (warna candle, latar, grid, dll.)
+    this.extCross = null; // waktu crosshair dari chart lain (sinkronisasi)
     // gambar
     this.drawings = [];
     this.tool = null; // id alat aktif atau 'eraser' / 'zoomin'
@@ -205,6 +213,7 @@ export class Chart {
     this.scroll = i + (this.plot.w - this.spacing / 2 - anchorX) / this.spacing;
     this._clampScroll();
     this.invalidate();
+    this.emit('view');
   }
   _clampScroll() {
     const n = this.candles.length;
@@ -258,8 +267,41 @@ export class Chart {
     const tool = TOOLS[d.tool];
     const g = new Geo(d.style);
     const P = d.points.map(p => this.toPx(p));
-    try { tool.build(g, P, d, this.ctxApi()); } catch (e) { console.warn(e); }
+    const api = this.ctxApi();
+    api.selected = this.selected === d || this.pending === d;
+    try { tool.build(g, P, d, api); } catch (e) { console.warn(e); }
+    // teks tambahan (tab "Teks" di pengaturan gambar)
+    if (d.text && !tool.needsText && P.length) {
+      const ts = d.textStyle || {};
+      const font = `${ts.italic ? 'italic ' : ''}${ts.bold ? 'bold ' : ''}${ts.size || 13}px system-ui`;
+      let x, y, align = ts.halign || 'center';
+      if (tool.line && P[1]) {
+        const a = P[0], b = P[1];
+        const t = align === 'left' ? 0 : align === 'right' ? 1 : 0.5;
+        x = a.x + (b.x - a.x) * t; y = a.y + (b.y - a.y) * t;
+        align = 'center';
+      } else {
+        const xs = P.map(p => p.x), ys = P.map(p => p.y);
+        x = align === 'left' ? Math.min(...xs) : align === 'right' ? Math.max(...xs) : (Math.min(...xs) + Math.max(...xs)) / 2;
+        y = ts.valign === 'bottom' ? Math.max(...ys) : ts.valign === 'middle' ? (Math.min(...ys) + Math.max(...ys)) / 2 : Math.min(...ys);
+      }
+      const off = ts.valign === 'bottom' ? 14 : ts.valign === 'middle' ? 0 : -14;
+      d.text.split('\n').forEach((line, k, arr) => g.text(x, y + off + (k - (ts.valign === 'bottom' ? 0 : arr.length - 1)) * ((ts.size || 13) + 4), line, { align, color: ts.color || d.style.color, font, dash: [] }));
+    }
     return { g, P };
+  }
+  visibleOnTf(d) {
+    const v = d.vis; if (!v) return true;
+    const t = this.tfMs, k = t < 3600e3 ? 'minutes' : t < 86400e3 ? 'hours' : t < 604800e3 ? 'days' : 'weeks';
+    return v[k] !== false;
+  }
+  // nilai harga garis gambar pada indeks bar tertentu (untuk alarm pada garis)
+  lineValueAt(d, i) {
+    const [a, b] = d.points; if (!a) return null;
+    if (['hline', 'hray', 'pricelabel'].includes(d.tool) || !b) return a.p;
+    const ia = this.tToI(a.t), ib = this.tToI(b.t);
+    if (Math.abs(ib - ia) < 1e-9) return null;
+    return a.p + ((b.p - a.p) * (i - ia)) / (ib - ia);
   }
   _snap(x, y) {
     let i = Math.round(this.xi(x));
@@ -282,7 +324,7 @@ export class Chart {
     if (this.hidden) return null;
     for (let k = this.drawings.length - 1; k >= 0; k--) {
       const d = this.drawings[k];
-      if (d.hidden) continue;
+      if (d.hidden || !this.visibleOnTf(d)) continue;
       if (this._hitHandle(d, x, y, tol) >= 0) return d;
       if (hit(this._geo(d).g, { x, y }, tol)) return d;
     }
@@ -380,7 +422,7 @@ export class Chart {
       const pt = this._snap(x, y);
       const tool = TOOLS[this.tool];
       if (tool.freehand) {
-        this.pending = { id: uid(), tool: this.tool, points: [{ t: this.iToT(this.xi(x)), p: this.yp(y) }], style: { ...this.defaultStyle(this.tool) } };
+        this.pending = { id: uid(), tool: this.tool, points: [{ t: this.iToT(this.xi(x)), p: this.yp(y) }], style: { ...this.defaultStyle(this.tool) }, ...this.defaultExtras(this.tool) };
         this.drag = { type: 'brush', lx: x, ly: y };
         return;
       }
@@ -390,7 +432,7 @@ export class Chart {
         pts[pts.length - 1] = pt; pts.push({ ...pt }); this.invalidate(); return;
       }
       if (!this.pending) {
-        this.pending = { id: uid(), tool: this.tool, points: [pt], style: { ...this.defaultStyle(this.tool) } };
+        this.pending = { id: uid(), tool: this.tool, points: [pt], style: { ...this.defaultStyle(this.tool) }, ...this.defaultExtras(this.tool) };
         if (tool.n === 1) return this._finishPending();
         this.pending.points.push({ ...pt });
         this.drag = { type: 'place', x, y, moved: false };
@@ -453,6 +495,7 @@ export class Chart {
       } else if (dr.type === 'pan') {
         this.scroll = dr.scroll + (dr.x - x) / this.spacing;
         this._clampScroll();
+        this.emit('view');
         if (!dr.auto) {
           const dp = ((y - dr.y) / this.plot.h) * (dr.pmax - dr.pmin);
           this.pmin = dr.pmin + dp; this.pmax = dr.pmax + dp;
@@ -508,6 +551,10 @@ export class Chart {
     this.invalidate();
   }
 
+  defaultExtras(tool) {
+    const x = this.extraDefaults?.[tool];
+    return x ? JSON.parse(JSON.stringify(x)) : {};
+  }
   defaultStyle(tool) {
     const s = this.styleDefaults?.[tool];
     return s || TOOLS[tool].defStyle || { color: '#2962ff', width: 2, dash: [] };
@@ -526,7 +573,7 @@ export class Chart {
     const L = this.layout(), h = L.mainH, tY = this.timeY;
     this._legendHits = [];
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = th.bg; ctx.fillRect(0, 0, this.W, this.H);
+    ctx.fillStyle = this.cs.bg || th.bg; ctx.fillRect(0, 0, this.W, this.H);
     if (!this.candles.length) {
       ctx.fillStyle = th.axisText; ctx.font = '14px system-ui'; ctx.textAlign = 'center';
       ctx.fillText(this.loadingText || 'Memuat data…', w / 2, h / 2);
@@ -543,11 +590,13 @@ export class Chart {
     const ticks = [];
     for (let p = Math.ceil(this.pmin / step) * step; p <= this.pmax; p += step) ticks.push(p);
     ctx.strokeStyle = th.grid; ctx.lineWidth = 1;
-    ctx.beginPath();
-    for (const p of ticks) { const y = Math.round(this.py(p)) + 0.5; ctx.moveTo(0, y); ctx.lineTo(w, y); }
     const tLabels = this._timeTicks(from, to);
-    for (const t of tLabels) { const x = Math.round(t.x) + 0.5; ctx.moveTo(x, 0); ctx.lineTo(x, tY); }
-    ctx.stroke();
+    if (this.cs.grid) {
+      ctx.beginPath();
+      for (const p of ticks) { const y = Math.round(this.py(p)) + 0.5; ctx.moveTo(0, y); ctx.lineTo(w, y); }
+      for (const t of tLabels) { const x = Math.round(t.x) + 0.5; ctx.moveTo(x, 0); ctx.lineTo(x, tY); }
+      ctx.stroke();
+    }
 
     ctx.save(); ctx.beginPath(); ctx.rect(0, 0, w, h); ctx.clip();
 
@@ -560,17 +609,24 @@ export class Chart {
       this._drawResult(r, from, toFar, py, { back: true });
     }
 
-    // seri harga
-    this._drawSeries(series, from, to);
+    // seri harga (saat memilih titik replay, bar setelah garis dibuat pudar)
+    const cur0 = this.cursor;
+    const fadeFrom = this.tool === 'replay' && cur0 && cur0.x < w ? Math.round(this.xi(cur0.x)) + 1 : null;
+    if (fadeFrom != null && fadeFrom <= to) {
+      this._drawSeries(series, from, Math.min(to, fadeFrom - 1));
+      ctx.globalAlpha = 0.25; this._drawSeries(series, Math.max(from, fadeFrom), to); ctx.globalAlpha = 1;
+    } else this._drawSeries(series, from, to);
 
     for (const st of mainSt) { const r = this.studyResult(st); if (r) this._drawResult(r, from, toFar, py, { back: false }); }
 
     // garis harga terakhir
     const last = this.candles[this.candles.length - 1];
-    const lastCol = last.c >= last.o ? th.up : th.down;
+    const lastCol = last.c >= last.o ? this.cs.upColor : this.cs.downColor;
     const ly = Math.round(this.py(last.c)) + 0.5;
-    ctx.setLineDash([2, 3]); ctx.strokeStyle = lastCol; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(0, ly); ctx.lineTo(w, ly); ctx.stroke(); ctx.setLineDash([]);
+    if (this.cs.priceLine) {
+      ctx.setLineDash([2, 3]); ctx.strokeStyle = lastCol; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(0, ly); ctx.lineTo(w, ly); ctx.stroke(); ctx.setLineDash([]);
+    }
 
     // alarm
     for (const al of this.alerts) {
@@ -581,7 +637,7 @@ export class Chart {
 
     // gambar
     if (!this.hidden) {
-      for (const d of this.drawings) if (!d.hidden) this._drawDrawing(d, d === this.selected);
+      for (const d of this.drawings) if (!d.hidden && this.visibleOnTf(d)) this._drawDrawing(d, d === this.selected);
     }
     if (this.pending) this._drawDrawing(this.pending, true);
 
@@ -595,9 +651,14 @@ export class Chart {
     // pemilihan titik awal replay
     const cur = this.cursor;
     if (this.tool === 'replay' && cur && cur.x < w) {
-      const x = this.ix(Math.round(this.xi(cur.x)));
-      ctx.fillStyle = 'rgba(41,98,255,.08)'; ctx.fillRect(x, 0, w - x, h);
+      const x = this.ix(Math.round(this.xi(cur.x))) + this.spacing / 2;
       ctx.strokeStyle = '#2962ff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+    }
+    // crosshair dari chart lain (sinkronisasi layout)
+    if (this.extCross != null && !(cur && cur.x < w)) {
+      const x = Math.round(this.ix(Math.round(this.tToI(this.extCross)))) + 0.5;
+      ctx.strokeStyle = th.cross; ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); ctx.setLineDash([]);
     }
     ctx.restore();
 
@@ -617,7 +678,7 @@ export class Chart {
     }
 
     // area sumbu
-    ctx.fillStyle = th.bg;
+    ctx.fillStyle = this.cs.bg || th.bg;
     ctx.fillRect(w, 0, AXIS_W, h); ctx.fillRect(0, tY, this.W, TIME_H);
     ctx.strokeStyle = th.grid; ctx.beginPath(); ctx.moveTo(w + 0.5, 0); ctx.lineTo(w + 0.5, tY); ctx.moveTo(0, tY + 0.5); ctx.lineTo(this.W, tY + 0.5); ctx.stroke();
     ctx.fillStyle = th.axisText; ctx.textAlign = 'left'; ctx.font = '11px system-ui'; ctx.textBaseline = 'middle';
@@ -628,7 +689,7 @@ export class Chart {
 
     // label harga terakhir + hitung mundur
     const remain = this.tfMs - ((Date.now() - last.t) % this.tfMs);
-    const showCd = !this.replay && remain > 0 && this.tfMs <= 86400000;
+    const showCd = this.cs.countdown && !this.replay && remain > 0 && this.tfMs <= 86400000;
     this._axisLabel(ly, this.fmt(last.c), lastCol, '#fff', showCd ? fmtCountdown(remain) : null);
     for (const al of this.alerts) this._axisLabel(this.py(al.price), '⏰ ' + this.fmt(al.price), al.active ? '#ff9800' : '#9598a1', '#fff');
 
@@ -804,28 +865,33 @@ export class Chart {
       }
       return;
     }
+    const cs = this.cs;
     const bw = Math.max(1, Math.floor(this.spacing * 0.7));
     for (let i = from; i <= to; i++) {
-      const c = s[i], up = c.c >= c.o, col = up ? th.up : th.down;
+      const c = s[i];
+      const up = cs.prevClose && i > 0 ? c.c >= s[i - 1].c : c.c >= c.o;
+      const body = up ? cs.upColor : cs.downColor, border = up ? cs.upBorder : cs.downBorder, wick = up ? cs.upWick : cs.downWick;
       const x = Math.round(this.ix(i));
       const yo = this.py(c.o), yc = this.py(c.c), yh = this.py(c.h), yl = this.py(c.l);
-      ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 1;
+      ctx.lineWidth = 1;
       if (type === 'bars') {
+        ctx.strokeStyle = body;
         ctx.beginPath();
         ctx.moveTo(x + 0.5, yh); ctx.lineTo(x + 0.5, yl);
         ctx.moveTo(x - bw / 2, Math.round(yo) + 0.5); ctx.lineTo(x + 0.5, Math.round(yo) + 0.5);
         ctx.moveTo(x + 0.5, Math.round(yc) + 0.5); ctx.lineTo(x + bw / 2 + 1, Math.round(yc) + 0.5);
         ctx.stroke(); continue;
       }
-      ctx.beginPath(); ctx.moveTo(x + 0.5, yh); ctx.lineTo(x + 0.5, yl); ctx.stroke();
+      if (cs.wick) { ctx.strokeStyle = wick; ctx.beginPath(); ctx.moveTo(x + 0.5, yh); ctx.lineTo(x + 0.5, yl); ctx.stroke(); }
       const top = Math.round(Math.min(yo, yc)), hgt = Math.max(1, Math.round(Math.abs(yc - yo)));
-      if (bw <= 2) continue;
-      if (type === 'hollow' && up) {
-        ctx.fillStyle = th.bg; ctx.fillRect(x - Math.floor(bw / 2), top, bw, hgt);
-        ctx.strokeRect(x - Math.floor(bw / 2) + 0.5, top + 0.5, bw - 1, Math.max(0, hgt - 1));
-      } else ctx.fillRect(x - Math.floor(bw / 2), top, bw, hgt);
+      const x0 = x - Math.floor(bw / 2);
+      if (bw <= 2) { if (!cs.wick) { ctx.fillStyle = body; ctx.fillRect(x, top, 1, hgt); } continue; }
+      if (type === 'hollow' && up) { ctx.fillStyle = this.cs.bg || th.bg; ctx.fillRect(x0, top, bw, hgt); ctx.strokeStyle = body; ctx.strokeRect(x0 + 0.5, top + 0.5, bw - 1, Math.max(0, hgt - 1)); continue; }
+      if (cs.body) { ctx.fillStyle = body; ctx.fillRect(x0, top, bw, hgt); }
+      if (cs.border) { ctx.strokeStyle = border; ctx.strokeRect(x0 + 0.5, top + 0.5, bw - 1, Math.max(0, hgt - 1)); }
     }
   }
+
 
   _drawDrawing(d, selected) {
     const ctx = this.ctx;

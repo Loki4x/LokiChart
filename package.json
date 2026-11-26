@@ -1,6 +1,6 @@
 {
   "name": "lokichart",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Aplikasi charting analisa pasar dengan data candle OANDA dan FOREX.com (web + Android)",
   "type": "module",
   "scripts": {

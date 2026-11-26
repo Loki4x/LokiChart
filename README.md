@@ -79,18 +79,20 @@ Jika kredensial belum diisi, aplikasi memakai **data demo sintetis** (badge oran
 
 ## Fitur
 
-- **Chart:** candle / candle kosong / Heikin Ashi / bar / garis / area; geser, zoom (scroll, pinch, seret sumbu), crosshair, legenda OHLC, hitung mundur penutupan bar, update harga tiap 2 detik
-- **Layout multi-chart:** 1, 2 (berdampingan/bertumpuk), 3, atau 4 chart — tiap chart punya simbol, timeframe, dan indikator sendiri
-- **Indikator** (bisa diatur parameternya, ketuk nama indikator di chart untuk mengatur):
-  - Di chart utama: Volume, SMA, EMA, WMA, Bollinger Bands, VWAP (reset harian/mingguan/bulanan), Ichimoku Cloud, Supertrend, Pivot Points (Klasik/Fibonacci/Camarilla), **Struktur Pasar & Order Block** (swing HH/HL/LH/LL, BOS, CHoCH, order block dengan kekuatan volume)
-  - Pane terpisah: RSI, MACD, Stochastic, ATR, CCI, OBV, ADX/DMI
-- **Alarm harga:** melintasi / melintasi ke atas / ke bawah / di atas / di bawah; garis alarm di chart bisa diseret; notifikasi + bunyi + getar (Android: notifikasi sistem). Alarm diperiksa selama aplikasi terbuka.
-- **Replay bar:** pilih titik awal, putar/jeda, maju per bar, kecepatan 1x–25x
-- **Pohon objek:** daftar indikator, gambar, dan alarm — tampil/sembunyi, kunci, hapus
-- **Ikhtisar simbol:** harga, perubahan hari ini & sepanjang data, grafik 1H/5H/1B/3B/YTD/1T/5T/Seluruh, poin data penting (penutupan sebelumnya, buka, rentang hari, rentang 52 minggu), **musiman** (perbandingan 3 tahun terakhir)
-- Daftar pantau, pencarian simbol per broker/kategori (65 simbol: forex, logam, energi, pertanian, indeks, kripto), simbol terakhir di toolbar bawah
-- Undo/redo, tema terang/gelap, mode fokus/layar penuh, **bagikan gambar chart** (Android: menu bagikan)
-- Gambar, indikator, dan alarm tersimpan otomatis di perangkat
+- **Navigasi seperti aplikasi charting mobile:** Daftar Pantau · Chart · Jelajahi · Menu
+- **Daftar Pantau:** harga & perubahan, ikhtisar simbol (grafik 1H–Seluruh, perubahan hari ini & sepanjang data, poin data penting, rentang 52 minggu, **musiman**, meter **Teknikal** Jual kuat–Beli kuat), tombol *Buka chart*
+- **Chart:** candle / candle kosong / Heikin Ashi / bar / garis / area; toolbar bawah (simbol, interval, Gambar, Indikator, Layout, Peringatan, Jenis chart, Replay, Pohon objek, Pusat analisis, Undo/Redo, Layar penuh, Bagikan)
+- **Pengaturan chart/simbol:** warna badan/batas/sumbu naik-turun, warnai berdasarkan penutupan sebelumnya, latar, grid, garis harga, hitung mundur, legenda OHLC (ketuk nama simbol di chart)
+- **Layout:** 1, 2, 3, 4, 6, 8 chart (beberapa susunan) dengan **sinkronisasi** simbol, interval, crosshair, dan waktu
+- **Indikator, metrik dan strategi:** Favorit, Template indikator, kategori Tren/Osilator/Volume/Volatilitas — 16 indikator yang bisa diatur:
+  Volume, SMA, EMA, WMA, Bollinger Bands, VWAP, Ichimoku, Supertrend, Pivot Points, **Struktur Pasar & Order Block** (HH/HL/LH/LL, BOS, CHoCH), RSI, MACD, Stochastic, ATR, CCI, OBV, ADX/DMI
+- **Peringatan:** panel Daftar & Log; harga (melintasi / ke atas / ke bawah / di atas / di bawah) **dan peringatan pada garis gambar** (garis tren, sinar, garis horizontal, dll.); sekali atau berulang; notifikasi + bunyi + getar. Diperiksa selama aplikasi terbuka.
+- **Replay bar:** saat memilih titik awal, bar setelahnya tampak pudar; putar/jeda, maju per bar, kecepatan 1x–25x
+- **Pusat analisis:** setup/simpan/buka layout, buat baru, pengaturan chart, detail simbol, teknikal
+- **Jelajahi:** kenaikan & penurunan terbesar, paling volatil, peta panas (per broker & kategori)
+- **Menu:** akun broker, tema, layar tetap menyala, bilah alat gambar di kiri (opsional), notifikasi, hapus data, versi aplikasi
+- **Gambar terpilih** menampilkan toolbar mengambang (bisa digeser): template, warna garis + opasitas, warna & ukuran teks, ketebalan, gaya garis, **pengaturan**, tambah peringatan, kunci, sembunyikan, hapus, lainnya (klon, urutan depan/belakang)
+- **Dialog pengaturan gambar:** tab **Corak** (warna/gaya/tebal garis, ujung panah kiri/kanan, perpanjang, titik tengah, label harga, statistik + posisi + selalu tampilkan, latar belakang, level Fibonacci), **Teks** (isi, warna, ukuran, tebal/miring, posisi), **Koordinat** (harga & waktu tiap titik), **Visibilitas** (per timeframe), **Template** (simpan, jadikan default, reset)
 
 ### Alat gambar (panel "Gambar")
 
