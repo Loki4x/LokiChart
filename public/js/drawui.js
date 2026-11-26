@@ -14,6 +14,7 @@ const IC = {
   alarm: 'M12 13m-7 0a7 7 0 1 0 14 0a7 7 0 1 0 -14 0 M12 9V13L14 15 M5 3L2 6 M19 3L22 6 M19 19h4 M21 17v4',
   lock: 'M6 11H18V21H6Z M8 11V7a4 4 0 0 1 8 0', unlock: 'M6 11H18V21H6Z M8 11V7a4 4 0 0 1 7.5 -2',
   hide: 'M3 3L21 21 M10.6 10.6a3 3 0 0 0 4.2 4.2 M9.9 5.1A9.7 9.7 0 0 1 12 5c4 0 7.5 2.5 10 7a17 17 0 0 1 -3 4 M6.6 6.6C4.6 8 3.2 9.8 2 12c2.5 4.5 6 7 10 7c1.6 0 3.1 -.4 4.4 -1.1',
+  angle: 'M4 20H20L4 4Z M4 14a6 6 0 0 1 6 6 M8 20V18 M12 20V18 M16 20V18',
   trash: 'M4 6H20 M9 6V3H15V6 M6 6L7 21H17L18 6', more: 'M5 12h.01 M12 12h.01 M19 12h.01',
   close: 'M6 6L18 18 M18 6L6 18', edit: 'M4 20h4L19 9l-4-4L4 16z',
 };
@@ -84,12 +85,12 @@ export function initDrawUI(ctx) {
       <button class="icon-btn" data-a="settings" title="Pengaturan">${icon(IC.set)}</button>
       ${ALERTABLE(d.tool) ? `<button class="icon-btn" data-a="alert" title="Tambah peringatan pada gambar">${icon(IC.alarm)}</button>` : ''}
       <button class="icon-btn ${d.locked ? 'on' : ''}" data-a="lock" title="${d.locked ? 'Buka kunci' : 'Kunci'}">${icon(d.locked ? IC.lock : IC.unlock)}</button>
+      ${t.freehand || t.n === 1 ? '' : `<button class="icon-btn ${ctx.chart().angleSnap ? 'on dark' : ''}" data-a="angle" title="Penggaris sudut (menempel ke kelipatan 15°)">${icon(IC.angle)}</button>`}
       <button class="icon-btn" data-a="hide" title="Sembunyikan">${icon(IC.hide)}</button>
       <button class="icon-btn" data-a="delete" title="Hapus">${icon(IC.trash)}</button>
       <button class="icon-btn" data-a="more" title="Lainnya">${icon(IC.more)}</button>`;
     bar.classList.remove('hidden');
     position(d);
-    void t;
   }
 
   function position(d) {
@@ -146,6 +147,11 @@ export function initDrawUI(ctx) {
       case 'settings': closePop(); return openSettings(d);
       case 'alert': closePop(); return ctx.addLineAlert(d);
       case 'lock': return edit(x => { x.locked = !x.locked; });
+      case 'angle': {
+        ctx.setAngleSnap(!c.angleSnap);
+        ctx.toast(c.angleSnap ? 'Penggaris sudut AKTIF: garis menempel ke 0°, 15°, 30°, 45°, 90°…' : 'Penggaris sudut nonaktif');
+        return render(d);
+      }
       case 'hide': { closePop(); c.snapshot(); d.hidden = true; c.selected = null; c.commit(); ctx.onSelect(null); ctx.toast('Gambar disembunyikan — tampilkan lagi lewat Pohon Objek'); return; }
       case 'delete': closePop(); return c.removeDrawing(d);
       case 'more':

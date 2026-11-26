@@ -132,6 +132,7 @@ export const CATEGORIES = [
 export const UTILITIES = [
   { id: 'measure', name: 'Pengukuran', icon: I.measure, kind: 'tool' },
   { id: 'eraser', name: 'Penghapus', icon: 'M7 21H21 M4 15L14 5L20 11L12 19H8Z M9 10L15 16', kind: 'tool' },
+  { id: 'angle', name: 'Penggaris sudut', icon: 'M4 20H20L4 4Z M4 14a6 6 0 0 1 6 6 M8 20V18 M12 20V18 M16 20V18', kind: 'toggle' },
   { id: 'stay', name: 'Tetap menggambar', icon: 'M4 20L15 9L19 13L8 24 M15 9L18 6L22 10L19 13 M13 17h6v6h-6z', kind: 'toggle' },
   { id: 'hide', name: 'Sembunyikan gambar', icon: 'M2 12C5 6 9 4 12 4S19 6 22 12C19 18 15 20 12 20S5 18 2 12Z M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0', kind: 'toggle' },
   { id: 'lock', name: 'Kunci seluruh gambar', icon: 'M6 11H18V21H6Z M8 11V7a4 4 0 0 1 8 0', kind: 'toggle' },

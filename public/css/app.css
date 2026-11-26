@@ -313,3 +313,4 @@ body.dark .switch::after { background: var(--bg); }
 .menu-item .val { display: flex; align-items: center; }
 .dtabs, .panel-head, .form-actions, .ds-foot { flex: none; }
 @media (max-width: 820px) { .pane .legend { max-width: calc(100% - 180px); } }
+#drawBar .icon-btn.on.dark { background: var(--black); color: var(--bg); }

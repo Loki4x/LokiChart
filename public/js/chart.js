@@ -314,6 +314,18 @@ export class Chart {
     }
     return { t: this.iToT(i), p };
   }
+  // Penggaris sudut: titik menempel ke kelipatan 15° relatif terhadap titik jangkar (dalam piksel layar)
+  _angled(anchor, x, y, tool) {
+    if (!this.angleSnap || !anchor || TOOLS[tool]?.freehand || TOOLS[tool]?.n === 1) return null;
+    const a = this.toPx(anchor), dx = x - a.x, dy = y - a.y, len = Math.hypot(dx, dy);
+    if (len < 4) return null;
+    const step = Math.PI / 12, ang = Math.round(Math.atan2(dy, dx) / step) * step;
+    const L = Math.abs(dx * Math.cos(ang) + dy * Math.sin(ang)) || len;
+    const nx = a.x + Math.cos(ang) * L, ny = a.y + Math.sin(ang) * L;
+    let deg = Math.round((-ang * 180) / Math.PI); if (deg <= -180) deg += 360;
+    this._angleHint = { x: nx, y: ny, deg };
+    return { t: this.iToT(this.xi(nx)), p: this.yp(ny) };
+  }
   _hitHandle(d, x, y, tol) {
     if (TOOLS[d.tool].freehand) return -1;
     const P = d.points.map(p => this.toPx(p));
@@ -429,7 +441,8 @@ export class Chart {
       if (tool.n === Infinity && this.pending) {
         const pts = this.pending.points, prev = pts.length > 1 ? this.toPx(pts[pts.length - 2]) : null;
         if (prev && Math.hypot(prev.x - x, prev.y - y) < (isTouch(e) ? 18 : 8) && pts.length > 2) { pts.pop(); return this._finishPending(); }
-        pts[pts.length - 1] = pt; pts.push({ ...pt }); this.invalidate(); return;
+        const ap = this._angled(pts[pts.length - 2], x, y, this.pending.tool) || pt;
+        pts[pts.length - 1] = ap; pts.push({ ...ap }); this.invalidate(); return;
       }
       if (!this.pending) {
         this.pending = { id: uid(), tool: this.tool, points: [pt], style: { ...this.defaultStyle(this.tool) }, ...this.defaultExtras(this.tool) };
@@ -437,7 +450,7 @@ export class Chart {
         this.pending.points.push({ ...pt });
         this.drag = { type: 'place', x, y, moved: false };
       } else {
-        this.pending.points[this.pending.points.length - 1] = pt;
+        this.pending.points[this.pending.points.length - 1] = this._angled(this.pending.points[this.pending.points.length - 2], x, y, this.pending.tool) || pt;
         if (this.pending.points.length >= tool.n) return this._finishPending();
         this.pending.points.push({ ...pt });
         tool.constrain?.(this.pending.points);
@@ -478,7 +491,7 @@ export class Chart {
       if (dr) dr.moved ||= Math.hypot(x - dr.x, y - dr.y) > 8;
       if (!isTouch(e) || dr) {
         const pts = this.pending.points;
-        pts[pts.length - 1] = this._snap(x, y);
+        pts[pts.length - 1] = this._angled(pts[pts.length - 2], x, y, this.pending.tool) || this._snap(x, y);
         TOOLS[this.pending.tool].constrain?.(pts);
       }
     }
@@ -508,7 +521,8 @@ export class Chart {
         this.spacing = Math.max(1.5, Math.min(60, dr.spacing * Math.exp((x - dr.x) / 150)));
         this.scroll = this.scroll; this._clampScroll();
       } else if (dr.type === 'handle') {
-        dr.d.points[dr.k] = this._snap(x, y);
+        const anc = dr.d.points[dr.k - 1] || dr.d.points[dr.k + 1];
+        dr.d.points[dr.k] = this._angled(anc, x, y, dr.d.tool) || this._snap(x, y);
         TOOLS[dr.d.tool].constrain?.(dr.d.points);
         this.emit('select', dr.d);
       } else if (dr.type === 'move') {
@@ -524,6 +538,7 @@ export class Chart {
 
   _up(e) {
     this.pointers.delete(e.pointerId);
+    this._angleHint = null;
     const dr = this.drag;
     if (!dr) return;
     if (dr.type === 'pinch') { if (this.pointers.size < 2) this.drag = null; return; }
@@ -659,6 +674,12 @@ export class Chart {
       const x = Math.round(this.ix(Math.round(this.tToI(this.extCross)))) + 0.5;
       ctx.strokeStyle = th.cross; ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); ctx.setLineDash([]);
+    }
+    if (this._angleHint && (this.drag || this.pending)) {
+      const hnt = this._angleHint, s2 = `${hnt.deg}°`;
+      ctx.font = 'bold 12px system-ui'; const tw = ctx.measureText(s2).width + 12;
+      ctx.fillStyle = '#131722'; roundRect(ctx, hnt.x + 12, hnt.y - 28, tw, 20, 4); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(s2, hnt.x + 18, hnt.y - 18);
     }
     ctx.restore();
 

@@ -96,7 +96,7 @@ Jika kredensial belum diisi, aplikasi memakai **data demo sintetis** (badge oran
 
 ### Alat gambar (panel "Gambar")
 
-- **Peralatan:** Pengukuran, Penghapus, Tetap menggambar, Sembunyikan (gambar/indikator/semua), Kunci seluruh gambar, Magnet (mati/lemah/kuat), Hapus (gambar/indikator/semua), Perbesar (seret area), Perkecil
+- **Peralatan:** Pengukuran, Penghapus, **Penggaris sudut** (garis menempel ke kelipatan 15°: 0°, 15°, 30°, 45°, 90°…, juga ada di toolbar gambar terpilih), Tetap menggambar, Sembunyikan (gambar/indikator/semua), Kunci seluruh gambar, Magnet (mati/lemah/kuat), Hapus (gambar/indikator/semua), Perbesar (seret area), Perkecil
 - **Peralatan Tren:** Garis Tren, Sinar, Garis Info, Garis Perpanjangan, Sudut Tren, Garis Horizontal, Sinar Horizontal, Garis Vertikal, Garis Persilangan, Kanal Paralel, Tren Regresi, Puncak/Dasar Datar, Kanal Disjoin, Pitchfork, Schiff Pitchfork, Pitchfork Schiff Termodifikasi, Pitchfork Dalam
 - **Gann dan Fibonacci:** Fib Retracement, Fib Ekstensi Berbasis Tren, Fib Kanal, Fib Zona Waktu, Fib Kipas Resisten Kecepatan, Fib Waktu Berbasis Tren, Fib Lingkaran, Fib Spiral, Fib Busur Resisten Kecepatan, Fib Baji, Pitchfan, Kotak Gann, Kotak Gann Paten, Persegi Gann, Kipas Gann
 - **Motif:** XABCD, Cypher, Head dan Shoulder, ABCD, Segitiga, Three Drives, Gelombang Elliott (Impulse, Koreksi, Segitiga, Kombo Dobel, Kombo Tripel), Garis Siklus, Siklus Waktu, Garis Sinus

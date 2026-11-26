@@ -105,7 +105,7 @@ class Pane {
     this.chart = new Chart(this.el.querySelector('.chart'));
     const c = this.chart;
     applyChartLook(c);
-    Object.assign(c, { magnet: state.magnet, styleDefaults: state.styleDefaults, extraDefaults: state.extraDefaults, stay: G.stay, hidden: G.hidden, lockAll: G.lockAll, hideStudies: G.hideStudies });
+    Object.assign(c, { magnet: state.magnet, styleDefaults: state.styleDefaults, extraDefaults: state.extraDefaults, stay: G.stay, hidden: G.hidden, lockAll: G.lockAll, hideStudies: G.hideStudies, angleSnap: !!state.angleSnap });
     this.el.addEventListener('pointerdown', () => setActive(this.idx), true);
     this.el.querySelector('.go-latest').onclick = () => c.goLatest();
     this.legend.addEventListener('click', e => { if (e.target.closest('.t')) openChartSettings(); });
@@ -331,6 +331,7 @@ function renderRail() {
     <div class="sep"></div>
     <button class="icon-btn ${c.tool === 'measure' ? 'on' : ''}" data-act="measure" title="Pengukuran">${icon(TOOLS.measure.icon)}</button>
     <button class="icon-btn ${state.magnet !== 'off' ? 'on' : ''}" data-act="magnet" title="Magnet">${icon(UT('magnet'))}<span class="badge">${{ off: '', weak: 'L', strong: 'K' }[state.magnet]}</span></button>
+    <button class="icon-btn ${state.angleSnap ? 'on' : ''}" data-act="angle" title="Penggaris sudut">${icon('M4 20H20L4 4Z M4 14a6 6 0 0 1 6 6')}</button>
     <button class="icon-btn ${G.hidden ? 'on' : ''}" data-act="hide" title="Sembunyikan gambar">${icon(UT('hide'))}</button>
     <button class="icon-btn" data-act="clear" title="Hapus gambar">${icon(IC.trash)}</button>`;
 }
@@ -358,6 +359,7 @@ function runUtility(a) {
     case 'eraser': selectTool(c.tool === 'eraser' ? null : 'eraser'); break;
     case 'zoomin': selectTool(c.tool === 'zoomin' ? null : 'zoomin'); if (chart().tool) toast('Seret area pada chart untuk memperbesar'); break;
     case 'zoomout': c.zoomOut(); break;
+    case 'angle': state.angleSnap = !state.angleSnap; save(); for (const x of allCharts()) x.angleSnap = state.angleSnap; toast(state.angleSnap ? 'Penggaris sudut AKTIF: garis menempel ke kelipatan 15°' : 'Penggaris sudut nonaktif'); break;
     case 'stay': setGlobal('stay', !G.stay); toast(G.stay ? 'Tetap menggambar: AKTIF' : 'Tetap menggambar: NONAKTIF'); break;
     case 'hide': setGlobal('hidden', !G.hidden); onSelect(null); break;
     case 'hidestudies': setGlobal('hideStudies', !G.hideStudies); break;
@@ -391,7 +393,7 @@ const SUBMENU = {
 };
 function utilOn(u) {
   const c = chart();
-  return { measure: c.tool === 'measure', eraser: c.tool === 'eraser', zoomin: c.tool === 'zoomin', stay: G.stay, hide: G.hidden, lock: G.lockAll, magnet: state.magnet !== 'off' }[u.id] || false;
+  return { measure: c.tool === 'measure', eraser: c.tool === 'eraser', zoomin: c.tool === 'zoomin', angle: !!state.angleSnap, stay: G.stay, hide: G.hidden, lock: G.lockAll, magnet: state.magnet !== 'off' }[u.id] || false;
 }
 function renderToolGrid() {
   const c = chart(); if (!c) return;
@@ -447,6 +449,7 @@ const drawUI = initDrawUI({
   onSelect: d => onSelect(d),
   applyDefaults: () => { for (const c of allCharts()) { c.styleDefaults = state.styleDefaults; c.extraDefaults = state.extraDefaults; } },
   addLineAlert: d => editAlert(null, d),
+  setAngleSnap: on => { state.angleSnap = on; save(); for (const c of allCharts()) c.angleSnap = on; renderRail(); },
 });
 function onSelect(d) {
   drawUI.reset(); drawUI.render(d);
