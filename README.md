@@ -105,6 +105,14 @@ Jika kredensial belum diisi, aplikasi memakai **data demo sintetis** (badge oran
 
 ### Cara menggambar
 
+**Di HP/tablet (layar sentuh)** — seperti aplikasi charting mobile: setelah memilih alat, muncul **kursor biru** di tengah chart dan petunjuk di atas (mis. *1 dari 4 · Gerakkan kursor ke titik permulaan*). Geser jari di mana saja untuk memindahkan kursor (jari tidak menutupi titik), lalu **ketuk** untuk menaruh titik. Saat menggambar, toolbar bawah berisi: alat aktif (ketuk untuk batal), **Magnet** (Lemah/Kuat — kursor menempel ke Open/High/Low/Close candle), Tetap menggambar, **Penggaris sudut**, Sembunyikan, Pohon objek, Layar penuh.
+
+**Penggaris sudut:** garis menempel ke kelipatan 15° (0°, 15°, 30°, 45°, 90°…). Menekan tombolnya saat sebuah gambar dipilih langsung meluruskan gambar tersebut.
+
+**Gestur chart:** geser = menggulir chart (tanpa garis crosshair); **tekan lama** = crosshair muncul dan mengikuti jari, ketuk sekali untuk menyembunyikan; **ketuk 2x** pada chart = dialog **Pengaturan** (Simbol, Baris status, Skala dan garis, Canvas, Trading, Peringatan, Peristiwa); ketuk 2x pada gambar = pengaturan gambar.
+
+**Dengan mouse:**
+
 Pilih alat, lalu ketuk titik-titiknya di chart (jumlah titik muncul di notifikasi). Alat 2 titik juga bisa dibuat dengan menyeret. Kuas/Stabilo: seret jari. Jalur/Polyline: ketuk titik-titik, lalu ketuk titik terakhir sekali lagi untuk selesai. Ketuk gambar untuk memilih; seret titik biru untuk mengubah, seret badan gambar untuk memindahkan.
 
 Pintasan: `Alt+T` garis tren, `Alt+H` garis horizontal, `Alt+F` Fib retracement, `Alt+A` alarm baru, `→` maju 1 bar saat replay, `Delete` hapus gambar terpilih, `Esc` batal, `Ctrl+Z`/`Ctrl+Y` undo/redo, ketik huruf apa saja untuk mencari simbol.

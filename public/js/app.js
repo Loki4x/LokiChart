@@ -6,6 +6,7 @@ import { notify, askNotifyPermission, shareImage } from './native.js';
 import { Overview, drawGauge } from './overview.js';
 import { Explore, MenuPage } from './pages.js';
 import { initDrawUI } from './drawui.js';
+import { initSettings } from './settings.js';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -120,13 +121,17 @@ class Pane {
       for (const p of panes) if (p !== this && p.chart.candles.length) { p.chart.scroll = p.chart.tToI(t); p.chart.spacing = c.spacing; p.chart.invalidate(); }
     });
     c.on('select', d => { if (this.idx === state.active) onSelect(d); });
-    c.on('tool', () => { renderRail(); renderToolGrid(); renderReplayBar(); });
+    c.on('tool', () => { renderRail(); renderToolGrid(); renderReplayBar(); renderDrawMode(); });
+    c.on('toolset', () => { if (this.idx === state.active) { renderRail(); renderToolGrid(); renderDrawMode(); } });
     c.on('drawings', list => {
       localStorage.setItem(`ac:drawings:${this.cfg.symbol}`, JSON.stringify(list.filter(d => !TOOLS[d.tool].temp)));
       for (const p of panes) if (p !== this && p.cfg.symbol === this.cfg.symbol) p.chart.setDrawings(JSON.parse(JSON.stringify(list)));
       if (!$('#treePanel').classList.contains('hidden')) renderTree();
     });
     c.on('study', id => openStudySettings(this, id));
+    c.on('dbltap', () => { setActive(this.idx); openChartSettings(); });
+    c.on('dbldraw', d => { setActive(this.idx); c.selected = d; onSelect(d); c.invalidate(); drawUI.openSettings(d); });
+    c.on('drawstep', st => { if (this.idx === state.active) renderStep(st); });
     c.on('alertmove', al => { const a = alerts.find(x => x.id === al.id); if (a) { a.price = al.price; a.active = true; saveAlerts(); toast(`Peringatan dipindah ke ${c.fmt(al.price)}`); } });
     c.on('alertclick', al => editAlert(alerts.find(x => x.id === al.id)));
     c.on('replay', () => { if (this.idx === state.active) renderReplayBar(); });
@@ -167,18 +172,20 @@ class Pane {
     } catch { /* abaikan kegagalan sementara */ }
   }
   updateLegend() {
-    const cfg = this.cfg, info = symInfo(cfg.symbol, cfg.broker);
+    const cfg = this.cfg, info = symInfo(cfg.symbol, cfg.broker), cs = state.cs;
+    this.chart.watermarkText = `${cfg.symbol}, ${TF_SHORT[cfg.tf]}`;
     const c = this.hover || this.chart.candles.at(-1);
     const prev = this.hover ? this.hover.prev : this.chart.candles.at(-2);
-    const name = `<span class="t" title="Pengaturan simbol">${info?.desc || cfg.symbol} · ${TF_SHORT[cfg.tf]} · ${BROKERS[cfg.broker]}</span>`;
-    if (!c || state.cs.legend === false) this.legend.innerHTML = name;
+    const name = `<span class="t" title="Pengaturan simbol">${cs.legendTitle === 'symbol' ? cfg.symbol : info?.desc || cfg.symbol} · ${TF_SHORT[cfg.tf]} · ${BROKERS[cfg.broker]}</span>`;
+    if (!c) this.legend.innerHTML = name;
     else {
       const cls = c.c >= c.o ? 'up' : 'down', f = v => this.chart.fmt(v);
       const ch = prev ? c.c - prev.c : 0, chp = prev ? (ch / prev.c) * 100 : 0;
-      this.legend.innerHTML = `${name}
+      this.legend.innerHTML = name + (cs.legend !== false ? `
         <span>O<span class="v ${cls}"> ${f(c.o)}</span></span><span>H<span class="v ${cls}"> ${f(c.h)}</span></span>
-        <span>L<span class="v ${cls}"> ${f(c.l)}</span></span><span>C<span class="v ${cls}"> ${f(c.c)}</span></span>
-        <span class="v ${ch >= 0 ? 'up' : 'down'}">${ch >= 0 ? '+' : ''}${f(ch)} (${ch >= 0 ? '+' : ''}${chp.toFixed(2)}%)</span>`;
+        <span>L<span class="v ${cls}"> ${f(c.l)}</span></span><span>C<span class="v ${cls}"> ${f(c.c)}</span></span>` : '') +
+        (cs.legendChange !== false ? `<span class="v ${ch >= 0 ? 'up' : 'down'}">${ch >= 0 ? '+' : ''}${f(ch)} (${ch >= 0 ? '+' : ''}${chp.toFixed(2)}%)</span>` : '') +
+        (cs.legendVolume ? `<span>Vol <span class="v">${Math.round(c.v || 0).toLocaleString('id-ID')}</span></span>` : '');
     }
     const top = this.legend.offsetTop + this.legend.offsetHeight + 10;
     if (top !== this.chart.legendTop) { this.chart.legendTop = top; this.chart.invalidate(); }
@@ -205,7 +212,7 @@ function setActive(k) {
   prev.chart.setTool(null); prev.chart.selected = null; prev.chart.invalidate(); onSelect(null);
   state.active = k; save();
   panes.forEach((p, i) => p.el.classList.toggle('active', i === k));
-  renderHeader(); renderRail(); renderToolGrid(); renderReplayBar();
+  renderHeader(); renderRail(); renderToolGrid(); renderReplayBar(); renderDrawMode();
   setSource(act().source || 'demo');
   if (!$('#treePanel').classList.contains('hidden')) renderTree();
 }
@@ -342,13 +349,53 @@ $('#rail').onclick = e => {
 };
 function selectTool(id) {
   chart().setTool(id);
-  renderRail(); renderToolGrid();
-  if (id && TOOLS[id]) {
+  renderRail(); renderToolGrid(); renderDrawMode();
+  if (id && TOOLS[id] && !chart().tcur) {
     const t = TOOLS[id];
     toast(t.freehand ? `${t.name}: seret jari untuk menggambar` : t.n === Infinity ? `${t.name}: ketuk titik-titik, ketuk titik terakhir lagi untuk selesai` : `${t.name}: ketuk ${t.n} titik pada chart`, 2000);
   }
 }
 const allCharts = () => panes.map(p => p.chart);
+
+// ---------- Mode menggambar: banner langkah & toolbar bawah khusus ----------
+const MAG_IC = UTILITIES.find(u => u.id === 'magnet').icon;
+const ANG_IC = 'M4 20H20L4 4Z M4 14a6 6 0 0 1 6 6';
+function renderStep(st) {
+  const b = $('#stepBanner');
+  if (!st) { b.classList.add('hidden'); return; }
+  b.querySelector('.sb-k').textContent = st.total ? `${st.k} dari ${st.total}` : `Titik ${Math.ceil(st.k / 2)}`;
+  b.querySelector('.sb-t').textContent = st.text;
+  b.classList.remove('hidden');
+}
+$('#stepCancel').innerHTML = icon(IC.trash);
+$('#stepCancel').onclick = () => { selectTool(null); renderStep(null); };
+function renderDrawMode() {
+  const c = chart(), t = c?.tool && TOOLS[c.tool];
+  $('#bottombar').classList.toggle('drawing', !!t);
+  if (!t) { renderStep(null); return; }
+  const q = k => document.querySelector(`[data-dm="${k}"]`);
+  q('tool').innerHTML = icon(t.icon); q('tool').title = `${t.name} (ketuk untuk batal)`;
+  q('magnet').innerHTML = icon(MAG_IC); q('magnet').classList.toggle('act', state.magnet !== 'off');
+  q('stay').innerHTML = icon(UT('stay')); q('stay').classList.toggle('act', G.stay);
+  q('angle').innerHTML = icon(ANG_IC); q('angle').classList.toggle('act', !!state.angleSnap);
+  q('hide').innerHTML = icon(UT('hide')); q('hide').classList.toggle('act', G.hidden);
+  q('tree').innerHTML = icon(IC.layers); q('full').innerHTML = icon(IC.full);
+}
+document.querySelector('.bb-draw').onclick = e => {
+  const b = e.target.closest('[data-dm]'); if (!b) return;
+  const k = b.dataset.dm;
+  if (k === 'tool') { selectTool(null); return; }
+  if (k === 'magnet') {
+    const mi = (v, n) => `<button class="mi ${state.magnet === v ? 'on' : ''}" data-v="${v}">${icon(MAG_IC)} ${n}</button>`;
+    return popMenu(b, mi('weak', 'Magnet Lemah') + mi('strong', 'Magnet Kuat') + mi('off', 'Magnet Mati'), v => { setMagnet(v); renderDrawMode(); });
+  }
+  if (k === 'stay') runUtility('stay');
+  if (k === 'angle') runUtility('angle');
+  if (k === 'hide') runUtility('hide');
+  if (k === 'tree') { togglePanel('treePanel'); renderTree(); }
+  if (k === 'full') toggleFull();
+  renderDrawMode();
+};
 function setGlobal(key, val) { G[key] = val; for (const c of allCharts()) { c[key] = val; if (key === 'hidden') c.selected = null; c.invalidate(); } }
 function runUtility(a) {
   const c = chart();
@@ -359,7 +406,7 @@ function runUtility(a) {
     case 'eraser': selectTool(c.tool === 'eraser' ? null : 'eraser'); break;
     case 'zoomin': selectTool(c.tool === 'zoomin' ? null : 'zoomin'); if (chart().tool) toast('Seret area pada chart untuk memperbesar'); break;
     case 'zoomout': c.zoomOut(); break;
-    case 'angle': state.angleSnap = !state.angleSnap; save(); for (const x of allCharts()) x.angleSnap = state.angleSnap; toast(state.angleSnap ? 'Penggaris sudut AKTIF: garis menempel ke kelipatan 15°' : 'Penggaris sudut nonaktif'); break;
+    case 'angle': setAngleSnap(!state.angleSnap); break;
     case 'stay': setGlobal('stay', !G.stay); toast(G.stay ? 'Tetap menggambar: AKTIF' : 'Tetap menggambar: NONAKTIF'); break;
     case 'hide': setGlobal('hidden', !G.hidden); onSelect(null); break;
     case 'hidestudies': setGlobal('hideStudies', !G.hideStudies); break;
@@ -373,8 +420,25 @@ function runUtility(a) {
     case 'clearstudies': if (act().cfg.studies.length && confirm('Hapus semua indikator di chart ini?')) { act().cfg.studies.length = 0; save(); c.invalidate(); } break;
     case 'clearall': if (confirm('Hapus semua gambar dan indikator di chart ini?')) { c.clearDrawings(); act().cfg.studies.length = 0; save(); c.invalidate(); } break;
   }
-  renderRail(); renderToolGrid();
+  renderRail(); renderToolGrid(); renderDrawMode();
   if (!$('#treePanel').classList.contains('hidden')) renderTree();
+}
+// Penggaris sudut: saat diaktifkan, gambar yang sedang dipilih langsung diluruskan
+function setAngleSnap(on) {
+  state.angleSnap = on; save();
+  for (const c of allCharts()) c.angleSnap = on;
+  const c = chart(), d = c.selected;
+  if (on && d && !TOOLS[d.tool].freehand && d.points.length > 1 && !d.locked) {
+    c.snapshot();
+    for (let k = 1; k < d.points.length; k++) {
+      const px = c.toPx(d.points[k]);
+      const np = c._angled(d.points[k - 1], px.x, px.y, d.tool);
+      if (np) d.points[k] = np;
+    }
+    c._angleHint = null; c.commit(); drawUI.render(d);
+  }
+  toast(on ? 'Penggaris sudut AKTIF: garis diluruskan ke 0°, 15°, 30°, 45°, 90°…' : 'Penggaris sudut nonaktif');
+  renderRail(); renderToolGrid(); renderDrawMode();
 }
 function setMagnet(m) {
   state.magnet = m; save();
@@ -449,7 +513,7 @@ const drawUI = initDrawUI({
   onSelect: d => onSelect(d),
   applyDefaults: () => { for (const c of allCharts()) { c.styleDefaults = state.styleDefaults; c.extraDefaults = state.extraDefaults; } },
   addLineAlert: d => editAlert(null, d),
-  setAngleSnap: on => { state.angleSnap = on; save(); for (const c of allCharts()) c.angleSnap = on; renderRail(); },
+  setAngleSnap: on => setAngleSnap(on),
 });
 function onSelect(d) {
   drawUI.reset(); drawUI.render(d);
@@ -632,34 +696,14 @@ let formCancel = null;
 $('#closeForm').onclick = () => { formCancel?.(); $('#formModal').classList.add('hidden'); };
 $('#formModal').onclick = e => { if (e.target.id === 'formModal') { formCancel?.(); $('#formModal').classList.add('hidden'); } };
 
-// ---------- Pengaturan chart (simbol) ----------
-function openChartSettings() {
-  const cs = { ...DEFAULT_CS, ...state.cs }, before = { ...state.cs }, cfg = act().cfg;
-  const bg = cs.bg || THEMES[state.theme].bg;
-  const info = symInfo(cfg.symbol, cfg.broker);
-  formCancel = () => { state.cs = before; panes.forEach(p => applyChartLook(p.chart)); formCancel = null; };
-  const apply = v => {
-    state.cs = { ...state.cs, ...v, bg: v.bg && v.bg.toLowerCase() !== THEMES[state.theme].bg ? v.bg : '' };
-    delete state.cs.chartType;
-    panes.forEach(p => { applyChartLook(p.chart); p.updateLegend(); });
-    if (v.chartType) { cfg.chartType = chart().chartType = v.chartType; }
-  };
-  openForm(`${info?.desc || cfg.symbol} · ${BROKERS[cfg.broker]}`, [
-    { tab: 'Corak', key: 'chartType', label: 'Corak', type: 'select', options: TYPES, value: cfg.chartType },
-    { tab: 'Corak', key: 'prevClose', label: 'Warnai bar berdasarkan penutupan sebelumnya', type: 'bool', value: cs.prevClose },
-    { tab: 'Corak', type: 'heading', label: 'BADAN' }, { tab: 'Corak', key: 'body', label: 'Badan', type: 'bool', value: cs.body },
-    { tab: 'Corak', key: 'upColor', label: 'Naik', type: 'color', value: cs.upColor }, { tab: 'Corak', key: 'downColor', label: 'Turun', type: 'color', value: cs.downColor },
-    { tab: 'Corak', type: 'heading', label: 'BATAS-BATAS' }, { tab: 'Corak', key: 'border', label: 'Batas-batas', type: 'bool', value: cs.border },
-    { tab: 'Corak', key: 'upBorder', label: 'Naik', type: 'color', value: cs.upBorder }, { tab: 'Corak', key: 'downBorder', label: 'Turun', type: 'color', value: cs.downBorder },
-    { tab: 'Corak', type: 'heading', label: 'SUMBU' }, { tab: 'Corak', key: 'wick', label: 'Sumbu', type: 'bool', value: cs.wick },
-    { tab: 'Corak', key: 'upWick', label: 'Naik', type: 'color', value: cs.upWick }, { tab: 'Corak', key: 'downWick', label: 'Turun', type: 'color', value: cs.downWick },
-    { tab: 'Latar', key: 'bg', label: 'Warna latar', type: 'color', value: bg },
-    { tab: 'Latar', key: 'grid', label: 'Garis grid', type: 'bool', value: cs.grid },
-    { tab: 'Visibilitas', key: 'priceLine', label: 'Garis harga terakhir', type: 'bool', value: cs.priceLine },
-    { tab: 'Visibilitas', key: 'countdown', label: 'Hitung mundur penutupan bar', type: 'bool', value: cs.countdown },
-    { tab: 'Visibilitas', key: 'legend', label: 'Nilai OHLC di legenda', type: 'bool', value: cs.legend },
-  ], v => { apply(v); formCancel = null; save(); }, [['Default', () => { state.cs = {}; save(); panes.forEach(p => { applyChartLook(p.chart); p.updateLegend(); }); formCancel = null; }]], apply);
-}
+// ---------- Pengaturan chart (dialog bermenu kiri; juga dibuka dengan ketuk 2x pada chart) ----------
+const chartSettings = initSettings({
+  state, save, toast,
+  apply: () => panes.forEach(p => { applyChartLook(p.chart); p.updateLegend(); }),
+  chartType: () => act().cfg.chartType,
+  setChartType: v => { act().cfg.chartType = chart().chartType = v; chart().invalidate(); save(); },
+});
+function openChartSettings(sec) { chartSettings.open(sec); }
 
 // =====================================================================
 // Peringatan (harga & garis gambar)
@@ -1028,7 +1072,7 @@ const menuPage = new MenuPage($('#menuBody'), {
   buildPanes();
   setTheme(state.theme);
   applyRail();
-  renderToolTabs(); renderToolGrid(); renderHeader(); renderReplayBar();
+  renderToolTabs(); renderToolGrid(); renderHeader(); renderReplayBar(); renderDrawMode();
   if (!state.recent.length) remember(act().cfg);
   showPage(state.page || 'chart');
   if (state.keepAwake) menuPage.setKeepAwake(true);

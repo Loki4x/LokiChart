@@ -147,11 +147,7 @@ export function initDrawUI(ctx) {
       case 'settings': closePop(); return openSettings(d);
       case 'alert': closePop(); return ctx.addLineAlert(d);
       case 'lock': return edit(x => { x.locked = !x.locked; });
-      case 'angle': {
-        ctx.setAngleSnap(!c.angleSnap);
-        ctx.toast(c.angleSnap ? 'Penggaris sudut AKTIF: garis menempel ke 0°, 15°, 30°, 45°, 90°…' : 'Penggaris sudut nonaktif');
-        return render(d);
-      }
+      case 'angle': { ctx.setAngleSnap(!c.angleSnap); return render(c.selected); }
       case 'hide': { closePop(); c.snapshot(); d.hidden = true; c.selected = null; c.commit(); ctx.onSelect(null); ctx.toast('Gambar disembunyikan — tampilkan lagi lewat Pohon Objek'); return; }
       case 'delete': closePop(); return c.removeDrawing(d);
       case 'more':

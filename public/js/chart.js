@@ -17,7 +17,32 @@ export const DEFAULT_CS = {
   upColor: '#089981', downColor: '#f23645', body: true, border: true, wick: true,
   upBorder: '#089981', downBorder: '#f23645', upWick: '#089981', downWick: '#f23645',
   prevClose: false, priceLine: true, countdown: true, grid: true, bg: '', legend: true,
+  // Simbol
+  precision: '', tz: 'local',
+  // Skala dan garis
+  lastLabel: true, prevDayClose: false, hiLo: false, time12: false,
+  // Canvas
+  gridV: true, gridH: true, gridColor: '', crossColor: '', crossStyle: 'dash', watermark: false,
+  scaleText: '', scaleSize: 11, marginTop: 10, marginBottom: 8,
+  // Peringatan
+  alertColor: '#ff9800', alertsActiveOnly: false,
 };
+const _tzCache = new Map();
+const _tzFmt = new Map();
+function zoneOffset(tz, t) {
+  if (!tz || tz === 'local') return -new Date(t).getTimezoneOffset() * 60000;
+  if (tz === 'UTC') return 0;
+  const k = tz + '|' + Math.floor(t / 3600e3);
+  if (_tzCache.has(k)) return _tzCache.get(k);
+  let f = _tzFmt.get(tz);
+  if (!f) { try { f = new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric' }); } catch { f = null; } _tzFmt.set(tz, f); }
+  if (!f) return 0;
+  const p = Object.fromEntries(f.formatToParts(new Date(t)).map(x => [x.type, x.value]));
+  const off = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute) - Math.floor(t / 60000) * 60000;
+  if (_tzCache.size > 5000) _tzCache.clear();
+  _tzCache.set(k, off);
+  return off;
+}
 
 export class Chart {
   constructor(el) {
@@ -158,9 +183,12 @@ export class Chart {
   }
   toPx(pt) { const i = this.tToI(pt.t); return { x: this.ix(i), y: this.py(pt.p), i, p: pt.p, t: pt.t }; }
 
+  get prec() { const v = this.cs?.precision; return v === '' || v == null ? this.digits : +v; }
   fmt(p) {
-    return Number(p).toLocaleString('id-ID', { minimumFractionDigits: this.digits, maximumFractionDigits: this.digits });
+    return Number(p).toLocaleString('id-ID', { minimumFractionDigits: this.prec, maximumFractionDigits: this.prec });
   }
+  tzOff(t) { return zoneOffset(this.cs?.tz, t); }
+  _ft(t) { return fmtTime(t, this.tfMs, this.tzOff(t), this.cs?.time12); }
   dur(bars) {
     let s = Math.abs(bars) * this.tfMs / 1000, out = [];
     const u = [['mgg', 604800], ['h', 86400], ['j', 3600], ['m', 60]];
@@ -202,9 +230,10 @@ export class Chart {
       for (const ln of r?.lines || []) for (let i = a; i <= b; i++) { const v = ln.v[i]; if (v != null) { if (v > hi) hi = v; if (v < lo) lo = v; } }
     }
     if (!isFinite(lo)) return;
-    const pad = (hi - lo) * 0.1 || hi * 0.001 || 1;
+    const rng = (hi - lo) || hi * 0.001 || 1;
     const vol = this._mainStudies().some(s => s.type === 'volume');
-    this.pmin = lo - pad; this.pmax = hi + pad;
+    this.pmin = lo - rng * (this.cs.marginBottom ?? 8) / 100; this.pmax = hi + rng * (this.cs.marginTop ?? 10) / 100;
+    this._visHiLo = { hi, lo };
     if (vol) this.pmin -= (hi - lo) * 0.22;
   }
   zoom(factor, anchorX = this.plot.w) {
@@ -253,6 +282,11 @@ export class Chart {
   }
   setTool(id) {
     this.tool = id; this.pending = null;
+    this._tmoved = false;
+    const precise = id && TOOLS[id] && !TOOLS[id].freehand && (this.touchMode ?? matchMedia('(pointer: coarse)').matches);
+    this.tcur = precise ? (this.tcur || { x: this.plot.w / 2, y: this.plot.h / 2 }) : null;
+    if (precise) this._tpoint();
+    setTimeout(() => { this.emit('drawstep', this.drawStep()); this.emit('toolset', id); });
     if (id) { this.selected = null; this.emit('select', null); }
     this.canvas.style.cursor = id ? 'crosshair' : 'default';
     this.invalidate();
@@ -325,6 +359,48 @@ export class Chart {
     let deg = Math.round((-ang * 180) / Math.PI); if (deg <= -180) deg += 360;
     this._angleHint = { x: nx, y: ny, deg };
     return { t: this.iToT(this.xi(nx)), p: this.yp(ny) };
+  }
+  // titik kursor presisi (dengan magnet & penggaris sudut)
+  _tpoint() {
+    const c = this.tcur; if (!c) return null;
+    const pts = this.pending?.points;
+    const anchor = pts && pts.length > 1 ? pts[pts.length - 2] : null;
+    const pt = (anchor && this._angled(anchor, c.x, c.y, this.pending.tool)) || this._snap(c.x, c.y);
+    this.tsnap = this.toPx(pt);
+    return pt;
+  }
+  _tapPlace() {
+    const tool = TOOLS[this.tool]; if (!tool) return;
+    const pt = this._tpoint();
+    this._tmoved = false;
+    if (!this.pending) {
+      this.pending = { id: uid(), tool: this.tool, points: [pt], style: { ...this.defaultStyle(this.tool) }, ...this.defaultExtras(this.tool) };
+      if (tool.n === 1) this._finishPending(); else this.pending.points.push({ ...pt });
+    } else {
+      const pts = this.pending.points;
+      if (tool.n === Infinity) {
+        const prev = pts.length > 1 ? this.toPx(pts[pts.length - 2]) : null;
+        if (prev && pts.length > 2 && Math.hypot(prev.x - this.tsnap.x, prev.y - this.tsnap.y) < 12) { pts.pop(); this._finishPending(); }
+        else { pts[pts.length - 1] = pt; pts.push({ ...pt }); }
+      } else {
+        pts[pts.length - 1] = pt;
+        if (pts.length >= tool.n) this._finishPending();
+        else { pts.push({ ...pt }); tool.constrain?.(pts); }
+      }
+    }
+    this.emit('drawstep', this.drawStep());
+  }
+  // langkah petunjuk saat menggambar dengan sentuhan ("2 dari 4 · Ketuk untuk mengatur titik permulaan")
+  drawStep() {
+    const tool = TOOLS[this.tool];
+    if (!tool || tool.freehand || !this.tcur) return null;
+    const placed = this.pending ? this.pending.points.length - 1 : 0, n = tool.n, mv = !!this._tmoved;
+    const last = n !== Infinity && placed === n - 1;
+    let text;
+    if (placed === 0) text = mv ? 'Ketuk untuk mengatur titik permulaan' : 'Gerakkan kursor ke titik permulaan';
+    else if (last) text = mv ? 'Ketuk untuk menyelesaikan' : 'Gerakkan kursor ke titik terakhir';
+    else text = mv ? 'Ketuk untuk mengatur titik berikutnya' : (n === Infinity ? 'Gerakkan kursor ke titik berikutnya (ketuk 2x di titik terakhir untuk selesai)' : 'Gerakkan kursor ke titik berikutnya');
+    return { k: placed * 2 + (mv ? 2 : 1), total: n === Infinity ? null : n * 2, text };
   }
   _hitHandle(d, x, y, tol) {
     if (TOOLS[d.tool].freehand) return -1;
@@ -401,7 +477,10 @@ export class Chart {
     this.canvas.setPointerCapture?.(e.pointerId);
     this.pointers.set(e.pointerId, { x, y });
     const tol = isTouch(e) ? 16 : 7;
-    this.cursor = { x, y, touch: isTouch(e) };
+    const touch = isTouch(e);
+    if (!touch) this.cursor = { x, y, touch: false };
+    else if (this.crossMode && this.pointers.size === 1) { this.crossMode = false; this.cursor = null; this.emit('crosshair', null); this._crossTapped = true; }
+    else if (!this.crossMode) this.cursor = null;
 
     // hapus pengukuran sementara pada klik berikutnya
     const temps = this.drawings.filter(d => TOOLS[d.tool].temp);
@@ -428,6 +507,12 @@ export class Chart {
     if (this.tool === 'eraser') {
       const d = this._hitDrawing(x, y, tol);
       if (d) this.removeDrawing(d);
+      return;
+    }
+    // Mode kursor presisi (sentuh): geser jari untuk memindahkan kursor, ketuk untuk menaruh titik
+    if (touch && this.tool && TOOLS[this.tool] && !TOOLS[this.tool].freehand) {
+      this.tcur ||= { x: this.plot.w / 2, y: this.plot.h / 2 };
+      this.drag = { type: 'tcur', sx: x, sy: y, cx: this.tcur.x, cy: this.tcur.y, moved: false };
       return;
     }
     if (this.tool && TOOLS[this.tool]) {
@@ -478,15 +563,24 @@ export class Chart {
     const al = this.alerts.find(a => Math.abs(this.py(a.price) - y) <= tol);
     if (al) { this.drag = { type: 'alert', al, moved: false }; return; }
     if (this.selected) { this.selected = null; this.emit('select', null); }
-    this.drag = { type: 'pan', x, y, scroll: this.scroll, pmin: this.pmin, pmax: this.pmax, auto: this.autoScale };
+    const pd = this.drag = { type: 'pan', x, y, scroll: this.scroll, pmin: this.pmin, pmax: this.pmax, auto: this.autoScale, moved: false, touch };
+    // tekan lama (sentuh) -> tampilkan crosshair
+    clearTimeout(this._lp);
+    if (touch) this._lp = setTimeout(() => {
+      if (this.drag !== pd || pd.moved || this.pointers.size !== 1) return;
+      this.drag = { type: 'cross' }; this.crossMode = true;
+      this.cursor = { x, y, touch: true };
+      try { navigator.vibrate?.(15); } catch { /* */ }
+      this.emit('crosshair', this._crossInfo(x)); this.invalidate();
+    }, 450);
     this.invalidate();
   }
 
   _move(e) {
     const { x, y } = this._pos(e);
     if (this.pointers.has(e.pointerId)) this.pointers.set(e.pointerId, { x, y });
-    this.cursor = { x, y, touch: isTouch(e) };
     const dr = this.drag;
+    if (!isTouch(e) || dr?.type === 'cross') this.cursor = { x, y, touch: isTouch(e) };
     if (this.pending && (!dr || dr.type === 'place')) {
       if (dr) dr.moved ||= Math.hypot(x - dr.x, y - dr.y) > 8;
       if (!isTouch(e) || dr) {
@@ -496,7 +590,16 @@ export class Chart {
       }
     }
     if (dr) {
-      if (dr.type === 'brush' && this.pending) {
+      if (dr.type === 'tcur') {
+        if (Math.hypot(x - dr.sx, y - dr.sy) > 6) { dr.moved = true; this._tmoved = true; }
+        const w = this.plot.w, h = this.plot.h;
+        this.tcur = { x: Math.max(0, Math.min(w - 1, dr.cx + x - dr.sx)), y: Math.max(0, Math.min(h - 1, dr.cy + y - dr.sy)) };
+        const pt = this._tpoint();
+        if (this.pending) { const pts = this.pending.points; pts[pts.length - 1] = pt; TOOLS[this.pending.tool].constrain?.(pts); }
+        this.emit('drawstep', this.drawStep());
+      } else if (dr.type === 'cross') {
+        this.emit('crosshair', this._crossInfo(x));
+      } else if (dr.type === 'brush' && this.pending) {
         if (Math.hypot(x - dr.lx, y - dr.ly) > 3) { this.pending.points.push({ t: this.iToT(this.xi(x)), p: this.yp(y) }); dr.lx = x; dr.ly = y; }
       } else if (dr.type === 'alert') {
         dr.al.price = this.yp(y); dr.moved = true;
@@ -506,6 +609,7 @@ export class Chart {
         const target = dr.spacing * dist / dr.dist;
         this.zoom(target / this.spacing, dr.cx);
       } else if (dr.type === 'pan') {
+        if (Math.hypot(x - dr.x, y - dr.y) > 8) { dr.moved = true; clearTimeout(this._lp); }
         this.scroll = dr.scroll + (dr.x - x) / this.spacing;
         this._clampScroll();
         this.emit('view');
@@ -532,7 +636,7 @@ export class Chart {
         this.emit('select', dr.d);
       } else if (dr.type === 'zoomrect') { dr.x = x; dr.y = y; }
     }
-    this.emit('crosshair', this._crossInfo(x));
+    if (this.cursor) this.emit('crosshair', this._crossInfo(this.cursor.x));
     this.invalidate();
   }
 
@@ -543,6 +647,20 @@ export class Chart {
     if (!dr) return;
     if (dr.type === 'pinch') { if (this.pointers.size < 2) this.drag = null; return; }
     this.drag = null;
+    clearTimeout(this._lp);
+    const up = this._pos(e);
+    if (dr.type === 'cross') { this.invalidate(); return; }
+    if (dr.type === 'tcur') { if (!dr.moved) this._tapPlace(); this.invalidate(); return; }
+    // ketuk 2x (sentuh)
+    if (isTouch(e) && ((dr.type === 'pan' && !dr.moved) || (dr.type === 'move' && !dr.moved))) {
+      const now = Date.now(), lt = this._lastTap;
+      if (lt && now - lt.t < 350 && Math.hypot(up.x - lt.x, up.y - lt.y) < 30 && !this._crossTapped) {
+        this._lastTap = null;
+        if (dr.type === 'move') { this.history.pop(); this.emit('dbldraw', dr.d); return; }
+        this.emit('dbltap', up);
+      } else this._lastTap = { t: now, x: up.x, y: up.y };
+    }
+    this._crossTapped = false;
     if (dr.type === 'brush') { if (this.pending?.points.length > 1) this._finishPending(); else this.pending = null; this.invalidate(); return; }
     if (dr.type === 'alert') { if (dr.moved) this.emit('alertmove', dr.al); else this.emit('alertclick', dr.al); this.invalidate(); return; }
     if (dr.type === 'place' && dr.moved && this.pending && this.pending.points.length === 2 && TOOLS[this.pending.tool].n === 2) {
@@ -604,13 +722,18 @@ export class Chart {
     ctx.font = '11px system-ui'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
     const ticks = [];
     for (let p = Math.ceil(this.pmin / step) * step; p <= this.pmax; p += step) ticks.push(p);
-    ctx.strokeStyle = th.grid; ctx.lineWidth = 1;
+    ctx.strokeStyle = this.cs.gridColor || th.grid; ctx.lineWidth = 1;
     const tLabels = this._timeTicks(from, to);
-    if (this.cs.grid) {
+    if (this.cs.grid !== false) {
       ctx.beginPath();
-      for (const p of ticks) { const y = Math.round(this.py(p)) + 0.5; ctx.moveTo(0, y); ctx.lineTo(w, y); }
-      for (const t of tLabels) { const x = Math.round(t.x) + 0.5; ctx.moveTo(x, 0); ctx.lineTo(x, tY); }
+      if (this.cs.gridH !== false) for (const p of ticks) { const y = Math.round(this.py(p)) + 0.5; ctx.moveTo(0, y); ctx.lineTo(w, y); }
+      if (this.cs.gridV !== false) for (const t of tLabels) { const x = Math.round(t.x) + 0.5; ctx.moveTo(x, 0); ctx.lineTo(x, tY); }
       ctx.stroke();
+    }
+    if (this.cs.watermark && this.watermarkText) {
+      ctx.save(); ctx.fillStyle = th === THEMES.dark ? 'rgba(255,255,255,.06)' : 'rgba(19,23,34,.06)';
+      ctx.font = `bold ${Math.max(28, Math.min(90, w / 8))}px system-ui`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(this.watermarkText, w / 2, h / 2); ctx.restore();
     }
 
     ctx.save(); ctx.beginPath(); ctx.rect(0, 0, w, h); ctx.clip();
@@ -643,10 +766,22 @@ export class Chart {
       ctx.beginPath(); ctx.moveTo(0, ly); ctx.lineTo(w, ly); ctx.stroke(); ctx.setLineDash([]);
     }
 
+    // garis penutupan hari sebelumnya
+    this._pdc = null;
+    if (this.cs.prevDayClose && this.tfMs < 86400e3) {
+      const n = this.candles.length, dayOf = t => Math.floor((t + this.tzOff(t)) / 86400e3), today = dayOf(last.t);
+      for (let i = n - 1; i >= 0; i--) if (dayOf(this.candles[i].t) < today) { this._pdc = this.candles[i].c; break; }
+      if (this._pdc != null) {
+        const y = Math.round(this.py(this._pdc)) + 0.5;
+        ctx.strokeStyle = '#9598a1'; ctx.setLineDash([6, 4]); ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); ctx.setLineDash([]);
+      }
+    }
     // alarm
-    for (const al of this.alerts) {
+    const alertsShown = this.alerts.filter(a => a.active || !this.cs.alertsActiveOnly);
+    for (const al of alertsShown) {
       const y = Math.round(this.py(al.price)) + 0.5;
-      ctx.strokeStyle = al.active ? '#ff9800' : '#9598a1'; ctx.setLineDash([6, 4]); ctx.lineWidth = 1;
+      ctx.strokeStyle = al.active ? this.cs.alertColor || '#ff9800' : '#9598a1'; ctx.setLineDash([6, 4]); ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); ctx.setLineDash([]);
     }
 
@@ -675,6 +810,14 @@ export class Chart {
       ctx.strokeStyle = th.cross; ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); ctx.setLineDash([]);
     }
+    // kursor presisi (mode sentuh saat menggambar)
+    if (this.tcur && this.tool && TOOLS[this.tool]) {
+      const sp = this.tsnap || this.tcur;
+      ctx.strokeStyle = '#2962ff'; ctx.lineWidth = 1; ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(Math.round(sp.x) + 0.5, 0); ctx.lineTo(Math.round(sp.x) + 0.5, h); ctx.moveTo(0, Math.round(sp.y) + 0.5); ctx.lineTo(w, Math.round(sp.y) + 0.5); ctx.stroke();
+      ctx.beginPath(); ctx.arc(sp.x, sp.y, 4, 0, Math.PI * 2); ctx.fillStyle = '#2962ff'; ctx.fill();
+      ctx.beginPath(); ctx.arc(sp.x, sp.y, 9, 0, Math.PI * 2); ctx.strokeStyle = 'rgba(41,98,255,.35)'; ctx.lineWidth = 2; ctx.stroke();
+    }
     if (this._angleHint && (this.drag || this.pending)) {
       const hnt = this._angleHint, s2 = `${hnt.deg}°`;
       ctx.font = 'bold 12px system-ui'; const tw = ctx.measureText(s2).width + 12;
@@ -693,7 +836,7 @@ export class Chart {
     // crosshair
     if (cur && cur.x < w && cur.y < tY) {
       const cx = Math.round(this.ix(Math.round(this.xi(cur.x)))) + 0.5, cy = Math.round(cur.y) + 0.5;
-      ctx.strokeStyle = th.cross; ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
+      ctx.strokeStyle = this.cs.crossColor || th.cross; ctx.setLineDash({ solid: [], dot: [1, 3] }[this.cs.crossStyle] || [4, 4]); ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(cx, 0); ctx.lineTo(cx, tY); ctx.moveTo(0, cy); ctx.lineTo(w, cy); ctx.stroke();
       ctx.setLineDash([]);
     }
@@ -702,17 +845,23 @@ export class Chart {
     ctx.fillStyle = this.cs.bg || th.bg;
     ctx.fillRect(w, 0, AXIS_W, h); ctx.fillRect(0, tY, this.W, TIME_H);
     ctx.strokeStyle = th.grid; ctx.beginPath(); ctx.moveTo(w + 0.5, 0); ctx.lineTo(w + 0.5, tY); ctx.moveTo(0, tY + 0.5); ctx.lineTo(this.W, tY + 0.5); ctx.stroke();
-    ctx.fillStyle = th.axisText; ctx.textAlign = 'left'; ctx.font = '11px system-ui'; ctx.textBaseline = 'middle';
+    const fs = this.cs.scaleSize || 11;
+    ctx.fillStyle = this.cs.scaleText || th.axisText; ctx.textAlign = 'left'; ctx.font = `${fs}px system-ui`; ctx.textBaseline = 'middle';
     for (const p of ticks) ctx.fillText(this.fmt(p), w + 8, this.py(p));
     ctx.textAlign = 'center';
-    for (const t of tLabels) { ctx.font = t.bold ? 'bold 11px system-ui' : '11px system-ui'; ctx.fillText(t.s, t.x, tY + 14); }
+    for (const t of tLabels) { ctx.font = `${t.bold ? 'bold ' : ''}${fs}px system-ui`; ctx.fillText(t.s, t.x, tY + 14); }
     for (const pn of L.panes) this._paneAxis(pn);
 
     // label harga terakhir + hitung mundur
     const remain = this.tfMs - ((Date.now() - last.t) % this.tfMs);
     const showCd = this.cs.countdown && !this.replay && remain > 0 && this.tfMs <= 86400000;
-    this._axisLabel(ly, this.fmt(last.c), lastCol, '#fff', showCd ? fmtCountdown(remain) : null);
-    for (const al of this.alerts) this._axisLabel(this.py(al.price), '⏰ ' + this.fmt(al.price), al.active ? '#ff9800' : '#9598a1', '#fff');
+    if (this.cs.lastLabel !== false) this._axisLabel(ly, this.fmt(last.c), lastCol, '#fff', showCd ? fmtCountdown(remain) : null);
+    for (const al of this.alerts.filter(a => a.active || !this.cs.alertsActiveOnly)) this._axisLabel(this.py(al.price), '⏰ ' + this.fmt(al.price), al.active ? this.cs.alertColor || '#ff9800' : '#9598a1', '#fff');
+    if (this.cs.hiLo && this._visHiLo) {
+      this._axisLabel(this.py(this._visHiLo.hi), this.fmt(this._visHiLo.hi), '#787b86', '#fff');
+      this._axisLabel(this.py(this._visHiLo.lo), this.fmt(this._visHiLo.lo), '#787b86', '#fff');
+    }
+    if (this._pdc != null) this._axisLabel(this.py(this._pdc), this.fmt(this._pdc), '#9598a1', '#fff');
 
     // label sumbu untuk gambar terpilih
     if (this.selected && !this.hidden) {
@@ -720,7 +869,7 @@ export class Chart {
       for (const p of pts) {
         const P = this.toPx(p);
         this._axisLabel(P.y, this.fmt(p.p), '#2962ff', '#fff');
-        if (pts.length <= 2) this._timeLabel(P.x, fmtTime(p.t, this.tfMs), '#2962ff');
+        if (pts.length <= 2) this._timeLabel(P.x, this._ft(p.t), '#2962ff');
       }
     }
     if (cur && cur.x < w && cur.y < tY) {
@@ -730,11 +879,16 @@ export class Chart {
         if (pn?.map) this._axisLabel(cur.y, fmtNum(pn.map.inv(cur.y)), th.crossBg, '#fff');
       }
       const i = Math.round(this.xi(cur.x));
-      this._timeLabel(this.ix(i), fmtTime(this.iToT(i), this.tfMs), th.crossBg);
+      this._timeLabel(this.ix(i), this._ft(this.iToT(i)), th.crossBg);
+    }
+    if (this.tcur && this.tool && TOOLS[this.tool]) {
+      const sp = this.tsnap || this.tcur, i = Math.round(this.xi(sp.x));
+      this._axisLabel(sp.y, this.fmt(this.yp(sp.y)), '#2962ff', '#fff');
+      this._timeLabel(this.ix(i), this._ft(this.iToT(i)), '#2962ff');
     }
     if (this.replay) {
       ctx.fillStyle = 'rgba(41,98,255,.9)'; ctx.font = 'bold 11px system-ui'; ctx.textAlign = 'right';
-      ctx.fillText(`REPLAY · ${fmtTime(last.t, this.tfMs)}`, w - 8, h - 10);
+      ctx.fillText(`REPLAY · ${this._ft(last.t)}`, w - 8, h - 10);
     }
   }
 
@@ -809,21 +963,22 @@ export class Chart {
     }
   }
 
-  _legend(st, x, y, r, extra = '') {
-    const { ctx } = this;
+  _legend(st, x, y, r) {
+    const { ctx } = this, cs = this.cs;
     const def = INDICATORS[st.type];
     const i = this.cursor && this.cursor.x < this.plot.w ? Math.round(this.xi(this.cursor.x)) : this.candles.length - 1;
     ctx.font = '11px system-ui'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-    const name = indicatorLabel(st);
-    ctx.fillStyle = this.theme.axisText;
-    ctx.fillText(name, x, y);
-    let xx = x + ctx.measureText(name).width + 8;
-    for (const ln of (r?.lines || []).slice(0, 5)) {
-      const v = ln.v[i]; if (v == null) continue;
-      const s = def.pane === 'main' ? this.fmt(v) : fmtNum(v);
-      ctx.fillStyle = ln.color; ctx.fillText(s, xx, y); xx += ctx.measureText(s).width + 8;
+    const parts = [];
+    if (cs.studyTitle !== false) parts.push([cs.studyInputs === false ? def.short : indicatorLabel(st), this.theme.axisText]);
+    if (cs.studyValues !== false) {
+      for (const ln of (r?.lines || []).slice(0, 5)) { const v = ln.v[i]; if (v != null) parts.push([def.pane === 'main' ? this.fmt(v) : fmtNum(v), ln.color]); }
+      if (r?.hist?.[0]) { const v = r.hist[0].v[i]; if (v != null) parts.push([fmtNum(v), r.hist[0].colors[i]]); }
     }
-    if (r?.hist?.[0]) { const v = r.hist[0].v[i]; if (v != null) { const s = fmtNum(v); ctx.fillStyle = r.hist[0].colors[i]; ctx.fillText(s, xx, y); xx += ctx.measureText(s).width + 8; } }
+    if (!parts.length) parts.push([def.short, this.theme.axisText]);
+    const wTot = parts.reduce((a, [t]) => a + ctx.measureText(t).width + 8, 0);
+    if (cs.legendBg) { ctx.fillStyle = this.theme === THEMES.dark ? 'rgba(19,23,34,.75)' : 'rgba(255,255,255,.8)'; roundRect(ctx, x - 4, y - 9, wTot + 2, 18, 4); ctx.fill(); }
+    let xx = x;
+    for (const [t, c] of parts) { ctx.fillStyle = c; ctx.fillText(t, xx, y); xx += ctx.measureText(t).width + 8; }
     this._legendHits.push({ x0: x - 4, x1: xx, y0: y - 9, y1: y + 9, id: st.id });
   }
 
@@ -950,20 +1105,19 @@ export class Chart {
     let prevKey = null, prevDay = null, prevMonth = null, lastX = -1e9;
     const i0 = Math.floor(this.xi(0)), i1 = Math.ceil(this.xi(this.plot.w));
     for (let i = Math.max(i0, -1e5); i <= i1; i++) {
-      const t = this.iToT(i), dt = new Date(t);
-      const local = t - dt.getTimezoneOffset() * 60000;
+      const t = this.iToT(i), local = t + this.tzOff(t), dt = new Date(local);
       let key;
-      if (interval >= 365 * 86400e3) key = dt.getFullYear();
-      else if (interval >= 30 * 86400e3) key = dt.getFullYear() * 12 + Math.floor(dt.getMonth() / (interval / (30 * 86400e3)));
+      if (interval >= 365 * 86400e3) key = dt.getUTCFullYear();
+      else if (interval >= 30 * 86400e3) key = dt.getUTCFullYear() * 12 + Math.floor(dt.getUTCMonth() / (interval / (30 * 86400e3)));
       else key = Math.floor(local / interval);
-      const day = Math.floor(local / 86400e3), month = dt.getMonth();
+      const day = Math.floor(local / 86400e3), month = dt.getUTCMonth();
       if (prevKey !== null && key !== prevKey) {
         const x = this.ix(i);
         if (x - lastX > 50) {
           let s, bold = false;
-          if (prevMonth !== null && month !== prevMonth && interval >= 86400e3) { s = month === 0 ? String(dt.getFullYear()) : BULAN[month]; bold = true; }
-          else if (prevDay !== null && day !== prevDay) { s = interval >= 86400e3 ? String(dt.getDate()) : String(dt.getDate()); bold = interval < 86400e3; if (dt.getDate() === 1) s = BULAN[month]; }
-          else s = `${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+          if (prevMonth !== null && month !== prevMonth && interval >= 86400e3) { s = month === 0 ? String(dt.getUTCFullYear()) : BULAN[month]; bold = true; }
+          else if (prevDay !== null && day !== prevDay) { s = String(dt.getUTCDate()); bold = interval < 86400e3; if (dt.getUTCDate() === 1) s = BULAN[month]; }
+          else s = hm(dt, this.cs?.time12);
           out.push({ x, s, bold }); lastX = x;
         }
       }
@@ -1016,8 +1170,12 @@ function fmtCountdown(ms) {
   const s = Math.floor(ms / 1000), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60;
   return h ? `${pad(h)}:${pad(m)}:${pad(ss)}` : `${pad(m)}:${pad(ss)}`;
 }
-export function fmtTime(t, tfMs) {
-  const d = new Date(t);
-  const date = `${['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'][d.getDay()]} ${d.getDate()} ${BULAN[d.getMonth()]} '${String(d.getFullYear()).slice(2)}`;
-  return tfMs >= 86400000 ? date : `${date} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+export function fmtTime(t, tfMs, off = -new Date(t).getTimezoneOffset() * 60000, h12 = false) {
+  const d = new Date(t + off);
+  const date = `${['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'][d.getUTCDay()]} ${d.getUTCDate()} ${BULAN[d.getUTCMonth()]} '${String(d.getUTCFullYear()).slice(2)}`;
+  return tfMs >= 86400000 ? date : `${date} ${hm(d, h12)}`;
+}
+function hm(d, h12) {
+  const h = d.getUTCHours(), m = pad(d.getUTCMinutes());
+  return h12 ? `${h % 12 || 12}:${m} ${h < 12 ? 'AM' : 'PM'}` : `${pad(h)}:${m}`;
 }
