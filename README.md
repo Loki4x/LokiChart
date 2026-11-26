@@ -1,13 +1,19 @@
 # LokiChart
 
-Aplikasi charting untuk analisa pasar — **aplikasi Android (APK)** dan versi web — dengan data candle dari **OANDA** dan **FOREX.com**, plus lebih dari 55 alat gambar.
+Aplikasi charting untuk analisa pasar — **aplikasi Android (APK)** dan versi web — dengan data candle dari **OANDA** dan **FOREX.com**, plus 76 alat gambar dan 16 indikator.
 
 ## Aplikasi Android (APK)
 
 APK di-build otomatis oleh **GitHub Actions** (`.github/workflows/android.yml`) setiap ada push ke `main`.
 
-**Mengunduh APK:** buka tab **Actions** → workflow *Build APK Android* → run terbaru → bagian **Artifacts** → `LokiChart-apk` (berupa zip, isinya `LokiChart.apk`).
-Untuk rilis yang mudah diunduh dari HP, buat tag versi (mis. `v1.0.0`); APK akan otomatis dilampirkan di **Releases**.
+**Mengunduh APK:** buka halaman **Releases** repo ini dan unduh `LokiChart-vX.Y.Z.apk`.
+Build dari setiap push ke `main` juga tersedia di tab **Actions** → *Build APK Android* → **Artifacts** (zip).
+
+**Membuat rilis baru** (APK otomatis muncul di Releases) — pilih salah satu:
+- Dari HP/browser: tab **Actions** → *Build APK Android* → **Run workflow** → isi *Versi rilis* (mis. `1.1.0`) → **Run workflow**.
+- Dari git: `git tag v1.1.0 && git push origin v1.1.0`.
+
+Nomor versi dipakai sebagai `versionName` APK, dan `versionCode` naik otomatis sehingga APK baru bisa meng-update yang lama.
 
 **Kredensial broker** diisi di dalam aplikasi: ketuk ikon ⚙ (atau badge "DATA DEMO") → isi token OANDA dan/atau akun FOREX.com → *Simpan & uji koneksi*.
 Kredensial disimpan hanya di HP dan aplikasi menghubungi OANDA/FOREX.com secara langsung — tidak perlu server.
@@ -71,28 +77,37 @@ Jika kredensial belum diisi, aplikasi memakai **data demo sintetis** (badge oran
 
 ## Fitur
 
-- Chart candle / candle kosong / Heikin Ashi / bar / garis / area, volume, SMA 20, EMA 50, EMA 200, Bollinger Bands
-- Geser, zoom (scroll, pinch, seret sumbu harga/waktu), klik ganda sumbu untuk reset, crosshair, legenda OHLC, hitung mundur penutupan bar
-- Update harga otomatis setiap 2 detik
-- Daftar pantau + ringkasan (penutupan sebelumnya, buka, rentang hari), pencarian simbol per broker/kategori
-- Undo/redo, tema terang/gelap, simpan gambar PNG, layar penuh
-- Gambar disimpan otomatis per simbol (localStorage)
+- **Chart:** candle / candle kosong / Heikin Ashi / bar / garis / area; geser, zoom (scroll, pinch, seret sumbu), crosshair, legenda OHLC, hitung mundur penutupan bar, update harga tiap 2 detik
+- **Layout multi-chart:** 1, 2 (berdampingan/bertumpuk), 3, atau 4 chart — tiap chart punya simbol, timeframe, dan indikator sendiri
+- **Indikator** (bisa diatur parameternya, ketuk nama indikator di chart untuk mengatur):
+  - Di chart utama: Volume, SMA, EMA, WMA, Bollinger Bands, VWAP (reset harian/mingguan/bulanan), Ichimoku Cloud, Supertrend, Pivot Points (Klasik/Fibonacci/Camarilla), **Struktur Pasar & Order Block** (swing HH/HL/LH/LL, BOS, CHoCH, order block dengan kekuatan volume)
+  - Pane terpisah: RSI, MACD, Stochastic, ATR, CCI, OBV, ADX/DMI
+- **Alarm harga:** melintasi / melintasi ke atas / ke bawah / di atas / di bawah; garis alarm di chart bisa diseret; notifikasi + bunyi + getar (Android: notifikasi sistem). Alarm diperiksa selama aplikasi terbuka.
+- **Replay bar:** pilih titik awal, putar/jeda, maju per bar, kecepatan 1x–25x
+- **Pohon objek:** daftar indikator, gambar, dan alarm — tampil/sembunyi, kunci, hapus
+- **Ikhtisar simbol:** harga, perubahan hari ini & sepanjang data, grafik 1H/5H/1B/3B/YTD/1T/5T/Seluruh, poin data penting (penutupan sebelumnya, buka, rentang hari, rentang 52 minggu), **musiman** (perbandingan 3 tahun terakhir)
+- Daftar pantau, pencarian simbol per broker/kategori (65 simbol: forex, logam, energi, pertanian, indeks, kripto), simbol terakhir di toolbar bawah
+- Undo/redo, tema terang/gelap, mode fokus/layar penuh, **bagikan gambar chart** (Android: menu bagikan)
+- Gambar, indikator, dan alarm tersimpan otomatis di perangkat
 
 ### Alat gambar (panel "Gambar")
 
-- **Peralatan:** Pengukuran, Penghapus, Tetap menggambar, Sembunyikan gambar, Kunci seluruh gambar, Magnet (mati/lemah/kuat), Hapus gambar, Perbesar (seret area), Perkecil
+- **Peralatan:** Pengukuran, Penghapus, Tetap menggambar, Sembunyikan (gambar/indikator/semua), Kunci seluruh gambar, Magnet (mati/lemah/kuat), Hapus (gambar/indikator/semua), Perbesar (seret area), Perkecil
 - **Peralatan Tren:** Garis Tren, Sinar, Garis Info, Garis Perpanjangan, Sudut Tren, Garis Horizontal, Sinar Horizontal, Garis Vertikal, Garis Persilangan, Kanal Paralel, Tren Regresi, Puncak/Dasar Datar, Kanal Disjoin, Pitchfork, Schiff Pitchfork, Pitchfork Schiff Termodifikasi, Pitchfork Dalam
 - **Gann dan Fibonacci:** Fib Retracement, Fib Ekstensi Berbasis Tren, Fib Kanal, Fib Zona Waktu, Fib Kipas Resisten Kecepatan, Fib Waktu Berbasis Tren, Fib Lingkaran, Fib Spiral, Fib Busur Resisten Kecepatan, Fib Baji, Pitchfan, Kotak Gann, Kotak Gann Paten, Persegi Gann, Kipas Gann
 - **Motif:** XABCD, Cypher, Head dan Shoulder, ABCD, Segitiga, Three Drives, Gelombang Elliott (Impulse, Koreksi, Segitiga, Kombo Dobel, Kombo Tripel), Garis Siklus, Siklus Waktu, Garis Sinus
 - **Proyeksi dan Pengukuran:** Posisi Long/Short (dengan R:R), Rentang Harga, Rentang Tanggal, Rentang Tanggal dan Harga
-- **Bentuk dan Teks:** Persegi Panjang, Elips, Panah, Teks, Catatan
+- **Berbasis Volume:** VWAP Berjangkar, Profil Volume Rentang Tetap (POC + value area 70%)
+- **Kuas:** Kuas, Stabilo
+- **Teks dan Catatan:** Teks, Catatan, Label Harga, Catatan Harga, Bendera, Penanda, Komentar, Penanda Panah Naik/Turun
+- **Bentuk:** Persegi Panjang, Persegi Diputar, Lingkaran, Elips, Segitiga, Busur, Kurva, Kurva Ganda, Jalur, Polyline, Panah
 - Favorit (★), pencarian alat, bar gaya untuk gambar terpilih (warna, ketebalan, gaya garis, perpanjang, kunci, duplikat, hapus)
 
 ### Cara menggambar
 
-Pilih alat, lalu ketuk titik-titiknya di chart (jumlah titik muncul di notifikasi). Alat 2 titik juga bisa dibuat dengan menyeret. Ketuk gambar untuk memilih; seret titik biru untuk mengubah, seret badan gambar untuk memindahkan.
+Pilih alat, lalu ketuk titik-titiknya di chart (jumlah titik muncul di notifikasi). Alat 2 titik juga bisa dibuat dengan menyeret. Kuas/Stabilo: seret jari. Jalur/Polyline: ketuk titik-titik, lalu ketuk titik terakhir sekali lagi untuk selesai. Ketuk gambar untuk memilih; seret titik biru untuk mengubah, seret badan gambar untuk memindahkan.
 
-Pintasan: `Alt+T` garis tren, `Alt+H` garis horizontal, `Alt+F` Fib retracement, `Delete` hapus gambar terpilih, `Esc` batal, `Ctrl+Z`/`Ctrl+Y` undo/redo, ketik huruf apa saja untuk mencari simbol.
+Pintasan: `Alt+T` garis tren, `Alt+H` garis horizontal, `Alt+F` Fib retracement, `Alt+A` alarm baru, `→` maju 1 bar saat replay, `Delete` hapus gambar terpilih, `Esc` batal, `Ctrl+Z`/`Ctrl+Y` undo/redo, ketik huruf apa saja untuk mencari simbol.
 
 ## Struktur
 
@@ -106,4 +121,7 @@ public/js/chart.js       mesin chart (canvas)
 public/js/tools.js       definisi semua alat gambar
 public/js/geo.js         primitif gambar (render + hit-test)
 public/js/app.js         antarmuka
+public/js/indicators.js  indikator teknikal
+public/js/overview.js    panel ikhtisar simbol
+public/js/native.js      notifikasi, bunyi, bagikan (Android/web)
 ```

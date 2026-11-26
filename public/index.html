@@ -7,7 +7,7 @@
   <title>LokiChart</title>
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="icon" href="/icon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/css/app.css" />
+  <link rel="stylesheet" href="css/app.css" />
 </head>
 <body>
   <div id="app">
@@ -26,28 +26,19 @@
         <option value="line">Garis</option>
         <option value="area">Area</option>
       </select>
-      <div class="dropdown">
-        <button id="indBtn" class="btn">ƒx Indikator</button>
-        <div id="indMenu" class="menu hidden"></div>
-      </div>
       <div class="spacer"></div>
       <span id="srcBadge" class="src-badge"></span>
-      <button class="icon-btn" id="undoBtn" title="Batalkan (Ctrl+Z)"></button>
-      <button class="icon-btn" id="redoBtn" title="Ulangi (Ctrl+Y)"></button>
       <button class="icon-btn" id="themeBtn" title="Tema terang/gelap"></button>
-      <button class="icon-btn" id="shotBtn" title="Simpan gambar chart"></button>
-      <button class="icon-btn" id="fullBtn" title="Layar penuh"></button>
-      <button class="icon-btn" id="wlBtn" title="Daftar pantau"></button>
+      <button class="icon-btn" id="wlBtn" title="Daftar pantau & ikhtisar"></button>
       <button class="icon-btn" id="setBtn" title="Pengaturan broker"></button>
     </header>
 
     <main id="main">
       <nav id="rail"></nav>
       <section id="chartWrap">
-        <div id="chart"></div>
-        <div id="legend"></div>
+        <div id="charts"></div>
         <div id="drawBar" class="hidden"></div>
-        <button id="goLatest" class="go-latest hidden" title="Ke bar terbaru">»</button>
+        <div id="replayBar" class="hidden"></div>
         <div id="toast" class="toast hidden"></div>
 
         <!-- Panel alat gambar -->
@@ -63,6 +54,15 @@
           <div id="toolTabs" class="chips"></div>
           <div id="toolGrid" class="grid"></div>
         </div>
+
+        <!-- Pohon objek -->
+        <div id="treePanel" class="panel right hidden">
+          <div class="panel-head">
+            <h2>Pohon Objek</h2>
+            <button class="icon-btn" id="closeTree" title="Tutup"></button>
+          </div>
+          <div id="treeList" class="tree"></div>
+        </div>
       </section>
 
       <aside id="watchlist" class="hidden">
@@ -75,7 +75,27 @@
         <div id="overview"></div>
       </aside>
     </main>
+
+    <footer id="bottombar">
+      <div id="recent" class="recent"></div>
+      <div class="bb-tools">
+        <button class="icon-btn" data-bb="draw" title="Alat gambar"></button>
+        <button class="icon-btn" data-bb="ind" title="Indikator"></button>
+        <button class="icon-btn" data-bb="layout" title="Layout chart"></button>
+        <button class="icon-btn" data-bb="alert" title="Alarm harga"></button>
+        <button class="icon-btn" data-bb="replay" title="Replay bar"></button>
+        <button class="icon-btn" data-bb="tree" title="Pohon objek"></button>
+        <span class="bb-sep"></span>
+        <button class="icon-btn" data-bb="undo" title="Batalkan (Ctrl+Z)"></button>
+        <button class="icon-btn" data-bb="redo" title="Ulangi (Ctrl+Y)"></button>
+        <button class="icon-btn" data-bb="full" title="Layar penuh"></button>
+        <button class="icon-btn" data-bb="share" title="Bagikan / simpan gambar chart"></button>
+      </div>
+    </footer>
   </div>
+
+  <!-- Menu popup serbaguna -->
+  <div id="popMenu" class="menu hidden"></div>
 
   <!-- Modal pencarian simbol -->
   <div id="searchModal" class="modal hidden">
@@ -86,6 +106,34 @@
       </div>
       <div id="symTabs" class="chips"></div>
       <div id="symList" class="sym-list"></div>
+    </div>
+  </div>
+
+  <!-- Modal indikator -->
+  <div id="indModal" class="modal hidden">
+    <div class="modal-box">
+      <div class="panel-head"><h2>Indikator</h2><button class="icon-btn" id="closeInd" title="Tutup"></button></div>
+      <div class="search"><span class="search-ico"></span><input id="indSearch" placeholder="Cari indikator" /></div>
+      <div id="indList" class="sym-list"></div>
+    </div>
+  </div>
+
+  <!-- Modal pengaturan indikator / form umum -->
+  <div id="formModal" class="modal hidden">
+    <div class="modal-box settings">
+      <div class="panel-head"><h2 id="formTitle"></h2><button class="icon-btn" id="closeForm" title="Tutup"></button></div>
+      <div id="formBody"></div>
+      <div class="form-actions" id="formActions"></div>
+    </div>
+  </div>
+
+  <!-- Modal alarm -->
+  <div id="alertModal" class="modal hidden">
+    <div class="modal-box">
+      <div class="panel-head"><h2>Alarm Harga</h2><button class="icon-btn" id="closeAlert" title="Tutup"></button></div>
+      <p class="note">Alarm diperiksa selama aplikasi terbuka (termasuk saat berjalan di latar belakang sebentar). Di Android, alarm muncul sebagai notifikasi.</p>
+      <button id="newAlert" class="primary">+ Buat alarm</button>
+      <div id="alertList" class="sym-list"></div>
     </div>
   </div>
 
@@ -108,6 +156,6 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js"></script>
+  <script type="module" src="js/app.js"></script>
 </body>
 </html>

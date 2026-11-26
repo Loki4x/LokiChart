@@ -1,6 +1,7 @@
 // Mesin chart berbasis Canvas: candle, sumbu, crosshair, zoom/geser, indikator, dan alat gambar.
 import { Geo, render, hit, roundRect } from './geo.js';
 import { TOOLS } from './tools.js';
+import { INDICATORS, indicatorLabel } from './indicators.js';
 
 const AXIS_W = 74, TIME_H = 26;
 const isTouch = e => e.pointerType === 'touch' || e.pointerType === 'pen';
@@ -28,7 +29,11 @@ export class Chart {
     this.autoScale = true;
     this.pmin = 0; this.pmax = 1;
     this.chartType = 'candles';
-    this.indicators = { volume: true, sma20: false, ema50: false, ema200: false, bb: false };
+    this.studies = []; // indikator aktif: [{ id, type, params, hidden }]
+    this._cache = new Map();
+    this.alerts = []; // [{ id, price, cond, active }]
+    this.replay = null; // { full, idx }
+    this.hideStudies = false;
     // gambar
     this.drawings = [];
     this.tool = null; // id alat aktif atau 'eraser' / 'zoomin'
@@ -65,7 +70,27 @@ export class Chart {
     this.canvas.style.width = r.width + 'px'; this.canvas.style.height = r.height + 'px';
     this.invalidate();
   }
-  get plot() { return { w: this.W - AXIS_W, h: this.H - TIME_H }; }
+  get plot() { return { w: this.W - AXIS_W, h: this.layout().mainH }; }
+  get timeY() { return this.H - TIME_H; }
+  layout() {
+    const subs = this.hideStudies ? [] : this.studies.filter(s => !s.hidden && INDICATORS[s.type]?.pane === 'sub');
+    const avail = this.H - TIME_H;
+    const ph = subs.length ? Math.max(60, Math.min(avail * 0.24, (avail * 0.55) / subs.length)) : 0;
+    const mainH = Math.max(80, avail - ph * subs.length);
+    return { mainH, panes: subs.map((st, k) => ({ st, top: mainH + k * ph, h: ph })) };
+  }
+  studyResult(st) {
+    const c = this.candles, last = c[c.length - 1];
+    if (!last) return null;
+    const key = `${st.type}|${JSON.stringify(st.params)}|${c.length}|${c[0].t}|${last.t}|${last.c}|${last.h}|${last.l}|${this.tfMs}`;
+    const hit = this._cache.get(st.id);
+    if (hit && hit.key === key) return hit.r;
+    let r = null;
+    try { r = INDICATORS[st.type].calc(c, st.params, { tfMs: this.tfMs }); } catch (e) { console.warn(e); }
+    this._cache.set(st.id, { key, r });
+    return r;
+  }
+  _mainStudies() { return this.hideStudies ? [] : this.studies.filter(s => !s.hidden && INDICATORS[s.type]?.pane === 'main'); }
 
   // ---------- Data ----------
   setData(candles, { tfMs, digits, keepView = false } = {}) {
@@ -81,11 +106,15 @@ export class Chart {
     } else if (atEnd) {
       this.scroll += candles.length - prevLen;
     }
-    this._calcIndicators();
     this.invalidate();
   }
   updateLast(bars) {
     // gabungkan bar terbaru (bar terakhir diperbarui / bar baru ditambahkan)
+    if (this.replay) { // saat replay, data baru disimpan tanpa ditampilkan
+      const f = this.replay.full;
+      for (const b of bars) { const l = f[f.length - 1]; if (!l || b.t > l.t) f.push(b); else if (b.t === l.t) f[f.length - 1] = b; }
+      return;
+    }
     const c = this.candles;
     let added = 0;
     for (const b of bars) {
@@ -94,7 +123,6 @@ export class Chart {
       else if (b.t === last.t) c[c.length - 1] = b;
     }
     if (added && this.scroll >= c.length - 1 - added) this.scroll += added;
-    this._calcIndicators();
     this.invalidate();
   }
 
@@ -135,6 +163,11 @@ export class Chart {
     return {
       fmt: p => this.fmt(p), dur: b => this.dur(b), plot: this.plot,
       ix: i => this.ix(i), xi: x => this.xi(x), py: p => this.py(p), yp: y => this.yp(y),
+      bars: (i0, i1) => {
+        const a = Math.max(0, Math.ceil(i0)), b = Math.min(this.candles.length - 1, Math.floor(i1));
+        return b >= a ? this.candles.slice(a, b + 1).map((c, k) => ({ ...c, i: a + k })) : [];
+      },
+      lastIndex: () => this.candles.length - 1,
       closes: (i0, i1) => {
         const out = [];
         for (let i = Math.max(0, Math.ceil(i0)); i <= Math.min(this.candles.length - 1, Math.floor(i1)); i++) out.push({ i, c: this.candles[i].c });
@@ -155,13 +188,16 @@ export class Chart {
     let lo = Infinity, hi = -Infinity;
     const src = this._series();
     for (let i = a; i <= b; i++) { const c = src[i]; if (!c) continue; if (c.l < lo) lo = c.l; if (c.h > hi) hi = c.h; }
-    if (this.indicators.bb && this.ind.bbU) for (let i = a; i <= b; i++) {
-      if (this.ind.bbU[i] != null) { hi = Math.max(hi, this.ind.bbU[i]); lo = Math.min(lo, this.ind.bbL[i]); }
+    for (const st of this._mainStudies()) {
+      if (st.type === 'structure' || st.type === 'pivots') continue;
+      const r = this.studyResult(st);
+      for (const ln of r?.lines || []) for (let i = a; i <= b; i++) { const v = ln.v[i]; if (v != null) { if (v > hi) hi = v; if (v < lo) lo = v; } }
     }
     if (!isFinite(lo)) return;
     const pad = (hi - lo) * 0.1 || hi * 0.001 || 1;
-    this.pmin = lo - pad; this.pmax = hi + pad * (this.indicators.volume ? 1.2 : 1);
-    if (this.indicators.volume) this.pmin -= (hi - lo) * 0.2;
+    const vol = this._mainStudies().some(s => s.type === 'volume');
+    this.pmin = lo - pad; this.pmax = hi + pad;
+    if (vol) this.pmin -= (hi - lo) * 0.22;
   }
   zoom(factor, anchorX = this.plot.w) {
     const i = this.xi(anchorX);
@@ -190,19 +226,6 @@ export class Chart {
     });
     this._ha = out; this._haSrc = this.candles; this._haLen = this.candles.length; this._haLast = this.candles.at(-1);
     return out;
-  }
-  _calcIndicators() {
-    const c = this.candles.map(x => x.c);
-    const sma = (n) => { const o = []; let s = 0; c.forEach((v, i) => { s += v; if (i >= n) s -= c[i - n]; o.push(i >= n - 1 ? s / n : null); }); return o; };
-    const ema = (n) => { const o = []; const k = 2 / (n + 1); let e = null; c.forEach((v, i) => { e = e == null ? v : v * k + e * (1 - k); o.push(i >= n - 1 ? e : null); }); return o; };
-    const s20 = sma(20);
-    const bbU = [], bbL = [];
-    c.forEach((v, i) => {
-      if (i < 19) { bbU.push(null); bbL.push(null); return; }
-      let d = 0; for (let k = i - 19; k <= i; k++) d += (c[k] - s20[i]) ** 2;
-      d = Math.sqrt(d / 20) * 2; bbU.push(s20[i] + d); bbL.push(s20[i] - d);
-    });
-    this.ind = { sma20: s20, ema50: ema(50), ema200: ema(200), bbU, bbL };
   }
 
   // ---------- Gambar (drawings) ----------
@@ -250,6 +273,7 @@ export class Chart {
     return { t: this.iToT(i), p };
   }
   _hitHandle(d, x, y, tol) {
+    if (TOOLS[d.tool].freehand) return -1;
     const P = d.points.map(p => this.toPx(p));
     for (let k = 0; k < P.length; k++) if (Math.hypot(P[k].x - x, P[k].y - y) <= tol) return k;
     return -1;
@@ -258,6 +282,7 @@ export class Chart {
     if (this.hidden) return null;
     for (let k = this.drawings.length - 1; k >= 0; k--) {
       const d = this.drawings[k];
+      if (d.hidden) continue;
       if (this._hitHandle(d, x, y, tol) >= 0) return d;
       if (hit(this._geo(d).g, { x, y }, tol)) return d;
     }
@@ -302,8 +327,11 @@ export class Chart {
     cv.addEventListener('dblclick', e => {
       const r = cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
       if (x > this.plot.w) this.resetScale();
-      else if (y > this.plot.h) { this.spacing = 8; this.goLatest(); }
-      else {
+      else if (y >= this.timeY) { this.spacing = 8; this.goLatest(); }
+      else if (y > this.plot.h) { /* pane indikator */ }
+      else if (this.pending && TOOLS[this.pending.tool].n === Infinity) {
+        if (this.pending.points.length > 2) { this.pending.points.pop(); this._finishPending(); }
+      } else {
         const d = this._hitDrawing(x, y, 6);
         if (d && TOOLS[d.tool].needsText) {
           const s = window.prompt('Ubah teks:', d.text || '');
@@ -330,9 +358,18 @@ export class Chart {
       this.drag = { type: 'pinch', dist: Math.hypot(a.x - b.x, a.y - b.y), spacing: this.spacing, cx: (a.x + b.x) / 2 };
       return;
     }
+    const lh = (this._legendHits || []).find(r => x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1);
+    if (lh && !this.tool) { this.emit('study', lh.id); return; }
+    if (y >= this.timeY) { this.drag = { type: 'time', x, spacing: this.spacing }; return; }
+    if (y > this.plot.h) { this.drag = { type: 'pan', x, y, scroll: this.scroll, pmin: this.pmin, pmax: this.pmax, auto: true }; return; }
     if (x > this.plot.w) { this.drag = { type: 'price', y, pmin: this.pmin, pmax: this.pmax }; this.autoScale = false; return; }
-    if (y > this.plot.h) { this.drag = { type: 'time', x, spacing: this.spacing }; return; }
 
+    if (this.tool === 'replay') {
+      const i = Math.max(10, Math.min(this.candles.length - 1, Math.round(this.xi(x))));
+      this.setTool(null); this.emit('tool', null);
+      this.startReplay(i);
+      return;
+    }
     if (this.tool === 'zoomin') { this.drag = { type: 'zoomrect', x0: x, y0: y, x, y }; return; }
     if (this.tool === 'eraser') {
       const d = this._hitDrawing(x, y, tol);
@@ -342,6 +379,16 @@ export class Chart {
     if (this.tool && TOOLS[this.tool]) {
       const pt = this._snap(x, y);
       const tool = TOOLS[this.tool];
+      if (tool.freehand) {
+        this.pending = { id: uid(), tool: this.tool, points: [{ t: this.iToT(this.xi(x)), p: this.yp(y) }], style: { ...this.defaultStyle(this.tool) } };
+        this.drag = { type: 'brush', lx: x, ly: y };
+        return;
+      }
+      if (tool.n === Infinity && this.pending) {
+        const pts = this.pending.points, prev = pts.length > 1 ? this.toPx(pts[pts.length - 2]) : null;
+        if (prev && Math.hypot(prev.x - x, prev.y - y) < (isTouch(e) ? 18 : 8) && pts.length > 2) { pts.pop(); return this._finishPending(); }
+        pts[pts.length - 1] = pt; pts.push({ ...pt }); this.invalidate(); return;
+      }
       if (!this.pending) {
         this.pending = { id: uid(), tool: this.tool, points: [pt], style: { ...this.defaultStyle(this.tool) } };
         if (tool.n === 1) return this._finishPending();
@@ -373,6 +420,8 @@ export class Chart {
       this.invalidate();
       return;
     }
+    const al = this.alerts.find(a => Math.abs(this.py(a.price) - y) <= tol);
+    if (al) { this.drag = { type: 'alert', al, moved: false }; return; }
     if (this.selected) { this.selected = null; this.emit('select', null); }
     this.drag = { type: 'pan', x, y, scroll: this.scroll, pmin: this.pmin, pmax: this.pmax, auto: this.autoScale };
     this.invalidate();
@@ -392,7 +441,11 @@ export class Chart {
       }
     }
     if (dr) {
-      if (dr.type === 'pinch' && this.pointers.size >= 2) {
+      if (dr.type === 'brush' && this.pending) {
+        if (Math.hypot(x - dr.lx, y - dr.ly) > 3) { this.pending.points.push({ t: this.iToT(this.xi(x)), p: this.yp(y) }); dr.lx = x; dr.ly = y; }
+      } else if (dr.type === 'alert') {
+        dr.al.price = this.yp(y); dr.moved = true;
+      } else if (dr.type === 'pinch' && this.pointers.size >= 2) {
         const [a, b] = [...this.pointers.values()];
         const dist = Math.hypot(a.x - b.x, a.y - b.y);
         const target = dr.spacing * dist / dr.dist;
@@ -432,6 +485,8 @@ export class Chart {
     if (!dr) return;
     if (dr.type === 'pinch') { if (this.pointers.size < 2) this.drag = null; return; }
     this.drag = null;
+    if (dr.type === 'brush') { if (this.pending?.points.length > 1) this._finishPending(); else this.pending = null; this.invalidate(); return; }
+    if (dr.type === 'alert') { if (dr.moved) this.emit('alertmove', dr.al); else this.emit('alertclick', dr.al); this.invalidate(); return; }
     if (dr.type === 'place' && dr.moved && this.pending && this.pending.points.length === 2 && TOOLS[this.pending.tool].n === 2) {
       this._finishPending();
     } else if (dr.type === 'handle' || (dr.type === 'move' && dr.moved)) {
@@ -455,7 +510,7 @@ export class Chart {
 
   defaultStyle(tool) {
     const s = this.styleDefaults?.[tool];
-    return s || { color: '#2962ff', width: 2, dash: [] };
+    return s || TOOLS[tool].defStyle || { color: '#2962ff', width: 2, dash: [] };
   }
 
   _crossInfo(x) {
@@ -467,17 +522,20 @@ export class Chart {
   // ---------- Render ----------
   draw() {
     const { ctx, dpr, theme: th } = this;
-    const { w, h } = this.plot;
+    const { w } = this.plot;
+    const L = this.layout(), h = L.mainH, tY = this.timeY;
+    this._legendHits = [];
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = th.bg; ctx.fillRect(0, 0, this.W, this.H);
     if (!this.candles.length) {
       ctx.fillStyle = th.axisText; ctx.font = '14px system-ui'; ctx.textAlign = 'center';
-      ctx.fillText('Memuat data…', w / 2, h / 2);
+      ctx.fillText(this.loadingText || 'Memuat data…', w / 2, h / 2);
       return;
     }
     this._autoscale();
     const series = this._series();
     const [from, to] = this.visibleRange();
+    const toFar = Math.ceil(this.xi(w)) + 1;
 
     // grid + sumbu harga
     const step = niceStep((this.pmax - this.pmin) / Math.max(2, h / 55));
@@ -488,34 +546,24 @@ export class Chart {
     ctx.beginPath();
     for (const p of ticks) { const y = Math.round(this.py(p)) + 0.5; ctx.moveTo(0, y); ctx.lineTo(w, y); }
     const tLabels = this._timeTicks(from, to);
-    for (const t of tLabels) { const x = Math.round(t.x) + 0.5; ctx.moveTo(x, 0); ctx.lineTo(x, h); }
+    for (const t of tLabels) { const x = Math.round(t.x) + 0.5; ctx.moveTo(x, 0); ctx.lineTo(x, tY); }
     ctx.stroke();
 
     ctx.save(); ctx.beginPath(); ctx.rect(0, 0, w, h); ctx.clip();
 
-    // volume
-    if (this.indicators.volume) {
-      let vmax = 0; for (let i = from; i <= to; i++) vmax = Math.max(vmax, this.candles[i].v || 0);
-      if (vmax > 0) for (let i = from; i <= to; i++) {
-        const c = this.candles[i], vh = (c.v / vmax) * h * 0.16, x = this.ix(i);
-        ctx.fillStyle = c.c >= c.o ? 'rgba(8,153,129,.25)' : 'rgba(242,54,69,.25)';
-        ctx.fillRect(x - Math.max(1, this.spacing * 0.35), h - vh, Math.max(1, this.spacing * 0.7), vh);
-      }
+    // indikator overlay (di belakang candle: volume, pita)
+    const mainSt = this._mainStudies();
+    const py = v => this.py(v);
+    for (const st of mainSt) {
+      const r = this.studyResult(st); if (!r) continue;
+      if (r.volume) this._drawVolume(r.volume, from, to, h);
+      this._drawResult(r, from, toFar, py, { back: true });
     }
 
     // seri harga
     this._drawSeries(series, from, to);
 
-    // indikator overlay
-    const line = (arr, color, wdt = 1.5) => {
-      ctx.strokeStyle = color; ctx.lineWidth = wdt; ctx.beginPath(); let st = false;
-      for (let i = from; i <= to; i++) { const v = arr[i]; if (v == null) { st = false; continue; } const X = this.ix(i), Y = this.py(v); st ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); st = true; }
-      ctx.stroke();
-    };
-    if (this.indicators.bb) { line(this.ind.bbU, 'rgba(41,98,255,.7)', 1); line(this.ind.bbL, 'rgba(41,98,255,.7)', 1); line(this.ind.sma20, 'rgba(255,152,0,.8)', 1); }
-    if (this.indicators.sma20 && !this.indicators.bb) line(this.ind.sma20, '#ff9800');
-    if (this.indicators.ema50) line(this.ind.ema50, '#2962ff');
-    if (this.indicators.ema200) line(this.ind.ema200, '#9c27b0');
+    for (const st of mainSt) { const r = this.studyResult(st); if (r) this._drawResult(r, from, toFar, py, { back: false }); }
 
     // garis harga terakhir
     const last = this.candles[this.candles.length - 1];
@@ -524,9 +572,16 @@ export class Chart {
     ctx.setLineDash([2, 3]); ctx.strokeStyle = lastCol; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(0, ly); ctx.lineTo(w, ly); ctx.stroke(); ctx.setLineDash([]);
 
+    // alarm
+    for (const al of this.alerts) {
+      const y = Math.round(this.py(al.price)) + 0.5;
+      ctx.strokeStyle = al.active ? '#ff9800' : '#9598a1'; ctx.setLineDash([6, 4]); ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); ctx.setLineDash([]);
+    }
+
     // gambar
     if (!this.hidden) {
-      for (const d of this.drawings) this._drawDrawing(d, d === this.selected);
+      for (const d of this.drawings) if (!d.hidden) this._drawDrawing(d, d === this.selected);
     }
     if (this.pending) this._drawDrawing(this.pending, true);
 
@@ -537,29 +592,45 @@ export class Chart {
       ctx.fillRect(Math.min(r.x0, r.x), Math.min(r.y0, r.y), Math.abs(r.x - r.x0), Math.abs(r.y - r.y0));
       ctx.strokeRect(Math.min(r.x0, r.x), Math.min(r.y0, r.y), Math.abs(r.x - r.x0), Math.abs(r.y - r.y0));
     }
-
-    // crosshair
+    // pemilihan titik awal replay
     const cur = this.cursor;
-    if (cur && cur.x < w && cur.y < h) {
-      const cx = Math.round(this.ix(Math.round(this.xi(cur.x)))) + 0.5, cy = Math.round(cur.y) + 0.5;
-      ctx.strokeStyle = th.cross; ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(cx, 0); ctx.lineTo(cx, h); ctx.moveTo(0, cy); ctx.lineTo(w, cy); ctx.stroke();
-      ctx.setLineDash([]);
+    if (this.tool === 'replay' && cur && cur.x < w) {
+      const x = this.ix(Math.round(this.xi(cur.x)));
+      ctx.fillStyle = 'rgba(41,98,255,.08)'; ctx.fillRect(x, 0, w - x, h);
+      ctx.strokeStyle = '#2962ff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
     }
     ctx.restore();
 
+    // legenda indikator utama
+    let ly0 = this.legendTop || 34;
+    for (const st of mainSt) { this._legend(st, 10, ly0, this.studyResult(st)); ly0 += 18; }
+
+    // pane indikator
+    for (const pn of L.panes) this._drawPane(pn, from, toFar, tLabels);
+
+    // crosshair
+    if (cur && cur.x < w && cur.y < tY) {
+      const cx = Math.round(this.ix(Math.round(this.xi(cur.x)))) + 0.5, cy = Math.round(cur.y) + 0.5;
+      ctx.strokeStyle = th.cross; ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(cx, 0); ctx.lineTo(cx, tY); ctx.moveTo(0, cy); ctx.lineTo(w, cy); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
     // area sumbu
     ctx.fillStyle = th.bg;
-    ctx.fillRect(w, 0, AXIS_W, this.H); ctx.fillRect(0, h, this.W, TIME_H);
-    ctx.strokeStyle = th.grid; ctx.beginPath(); ctx.moveTo(w + 0.5, 0); ctx.lineTo(w + 0.5, h); ctx.moveTo(0, h + 0.5); ctx.lineTo(w, h + 0.5); ctx.stroke();
-    ctx.fillStyle = th.axisText; ctx.textAlign = 'left'; ctx.font = '11px system-ui';
+    ctx.fillRect(w, 0, AXIS_W, h); ctx.fillRect(0, tY, this.W, TIME_H);
+    ctx.strokeStyle = th.grid; ctx.beginPath(); ctx.moveTo(w + 0.5, 0); ctx.lineTo(w + 0.5, tY); ctx.moveTo(0, tY + 0.5); ctx.lineTo(this.W, tY + 0.5); ctx.stroke();
+    ctx.fillStyle = th.axisText; ctx.textAlign = 'left'; ctx.font = '11px system-ui'; ctx.textBaseline = 'middle';
     for (const p of ticks) ctx.fillText(this.fmt(p), w + 8, this.py(p));
     ctx.textAlign = 'center';
-    for (const t of tLabels) { ctx.font = t.bold ? 'bold 11px system-ui' : '11px system-ui'; ctx.fillText(t.s, t.x, h + 14); }
+    for (const t of tLabels) { ctx.font = t.bold ? 'bold 11px system-ui' : '11px system-ui'; ctx.fillText(t.s, t.x, tY + 14); }
+    for (const pn of L.panes) this._paneAxis(pn);
 
     // label harga terakhir + hitung mundur
     const remain = this.tfMs - ((Date.now() - last.t) % this.tfMs);
-    this._axisLabel(ly, this.fmt(last.c), lastCol, '#fff', remain > 0 && this.tfMs <= 86400000 ? fmtCountdown(remain) : null);
+    const showCd = !this.replay && remain > 0 && this.tfMs <= 86400000;
+    this._axisLabel(ly, this.fmt(last.c), lastCol, '#fff', showCd ? fmtCountdown(remain) : null);
+    for (const al of this.alerts) this._axisLabel(this.py(al.price), '⏰ ' + this.fmt(al.price), al.active ? '#ff9800' : '#9598a1', '#fff');
 
     // label sumbu untuk gambar terpilih
     if (this.selected && !this.hidden) {
@@ -570,11 +641,152 @@ export class Chart {
         if (pts.length <= 2) this._timeLabel(P.x, fmtTime(p.t, this.tfMs), '#2962ff');
       }
     }
-    if (cur && cur.x < w && cur.y < h) {
-      this._axisLabel(cur.y, this.fmt(this.yp(cur.y)), th.crossBg, '#fff');
+    if (cur && cur.x < w && cur.y < tY) {
+      if (cur.y < h) this._axisLabel(cur.y, this.fmt(this.yp(cur.y)), th.crossBg, '#fff');
+      else {
+        const pn = L.panes.find(q => cur.y >= q.top && cur.y < q.top + q.h);
+        if (pn?.map) this._axisLabel(cur.y, fmtNum(pn.map.inv(cur.y)), th.crossBg, '#fff');
+      }
       const i = Math.round(this.xi(cur.x));
       this._timeLabel(this.ix(i), fmtTime(this.iToT(i), this.tfMs), th.crossBg);
     }
+    if (this.replay) {
+      ctx.fillStyle = 'rgba(41,98,255,.9)'; ctx.font = 'bold 11px system-ui'; ctx.textAlign = 'right';
+      ctx.fillText(`REPLAY · ${fmtTime(last.t, this.tfMs)}`, w - 8, h - 10);
+    }
+  }
+
+  _drawVolume(vol, from, to, h) {
+    const { ctx } = this;
+    let vmax = 0; for (let i = from; i <= to; i++) vmax = Math.max(vmax, vol.v[i] || 0);
+    if (!vmax) return;
+    const bw = Math.max(1, this.spacing * 0.7);
+    for (let i = from; i <= to; i++) {
+      const vh = ((vol.v[i] || 0) / vmax) * h * 0.16;
+      ctx.fillStyle = vol.colors[i]; ctx.fillRect(this.ix(i) - bw / 2, h - vh, bw, vh);
+    }
+    if (vol.ma) {
+      ctx.strokeStyle = 'rgba(41,98,255,.6)'; ctx.lineWidth = 1; ctx.beginPath(); let st = false;
+      for (let i = from; i <= to; i++) { const v = vol.ma[i]; if (v == null) { st = false; continue; } const X = this.ix(i), Y = h - (v / vmax) * h * 0.16; st ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); st = true; }
+      ctx.stroke();
+    }
+  }
+
+  _drawResult(r, from, to, py, { back }) {
+    const { ctx } = this;
+    const sp = this.spacing;
+    if (back) {
+      for (const bd of r.bands || []) {
+        for (let i = Math.max(1, from); i <= to; i++) {
+          const a0 = bd.a[i - 1], a1 = bd.a[i], b0 = bd.b[i - 1], b1 = bd.b[i];
+          if (a0 == null || a1 == null || b0 == null || b1 == null) continue;
+          ctx.fillStyle = bd.fill || (a1 >= b1 ? bd.fillUp : bd.fillDown);
+          const x0 = this.ix(i - 1), x1 = this.ix(i);
+          ctx.beginPath(); ctx.moveTo(x0, py(a0)); ctx.lineTo(x1, py(a1)); ctx.lineTo(x1, py(b1)); ctx.lineTo(x0, py(b0)); ctx.closePath(); ctx.fill();
+        }
+      }
+      for (const bx of r.boxes || []) {
+        if (bx.i1 < from || bx.i0 > to) continue;
+        const x0 = this.ix(bx.i0) - sp / 2, x1 = this.ix(bx.i1), y0 = py(bx.top), y1 = py(bx.bot);
+        ctx.fillStyle = bx.fill; ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+        if (bx.stroke) { ctx.strokeStyle = bx.stroke; ctx.lineWidth = 1; ctx.strokeRect(x0 + 0.5, y0 + 0.5, x1 - x0, y1 - y0); }
+        if (bx.label) { ctx.fillStyle = bx.stroke || '#787b86'; ctx.font = '10px system-ui'; ctx.textAlign = 'right'; ctx.textBaseline = 'top'; ctx.fillText(bx.label, Math.min(x1, this.plot.w) - 4, y0 + 2); }
+      }
+      return;
+    }
+    for (const hs of r.hist || []) {
+      const z = py(0), bw = Math.max(1, sp * 0.6);
+      for (let i = from; i <= to; i++) { const v = hs.v[i]; if (v == null) continue; ctx.fillStyle = hs.colors[i]; const y = py(v); ctx.fillRect(this.ix(i) - bw / 2, Math.min(y, z), bw, Math.max(1, Math.abs(y - z))); }
+    }
+    for (const ln of r.lines || []) {
+      ctx.strokeStyle = ln.color; ctx.lineWidth = ln.width || 1.5; ctx.setLineDash(ln.dash || []);
+      ctx.beginPath(); let st = false;
+      for (let i = from; i <= to; i++) { const v = ln.v[i]; if (v == null) { st = false; continue; } const X = this.ix(i), Y = py(v); st ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); st = true; }
+      ctx.stroke(); ctx.setLineDash([]);
+    }
+    for (const sg of r.segs || []) {
+      if (sg.i1 < from || sg.i0 > to) continue;
+      const x0 = this.ix(sg.i0), x1 = this.ix(sg.i1), y = Math.round(py(sg.p)) + 0.5;
+      ctx.strokeStyle = sg.color; ctx.lineWidth = sg.width || 1; ctx.setLineDash(sg.dash || []);
+      ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.stroke(); ctx.setLineDash([]);
+      if (sg.label) {
+        ctx.fillStyle = sg.labelColor || sg.color; ctx.font = '10px system-ui'; ctx.textBaseline = 'bottom';
+        if (sg.center) { ctx.textAlign = 'center'; ctx.fillText(sg.label, (x0 + x1) / 2, y - 2); }
+        else { ctx.textAlign = 'right'; ctx.fillText(sg.label, Math.min(x1, this.plot.w) - 2, y - 1); }
+      }
+    }
+    for (const m of r.marks || []) {
+      if (m.i < from || m.i > to) continue;
+      const x = this.ix(m.i), y = py(m.p) + (m.pos === 'above' ? -8 : 8);
+      ctx.font = m.small ? '9px system-ui' : 'bold 10px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = m.pos === 'above' ? 'bottom' : 'top';
+      if (!m.small) {
+        const tw = ctx.measureText(m.text).width + 8, by = m.pos === 'above' ? y - 15 : y;
+        ctx.fillStyle = m.color; roundRect(ctx, x - tw / 2, by, tw, 15, 3); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.fillText(m.text, x, m.pos === 'above' ? y - 2 : y + 2);
+      } else { ctx.fillStyle = m.color; ctx.fillText(m.text, x, y); }
+    }
+  }
+
+  _legend(st, x, y, r, extra = '') {
+    const { ctx } = this;
+    const def = INDICATORS[st.type];
+    const i = this.cursor && this.cursor.x < this.plot.w ? Math.round(this.xi(this.cursor.x)) : this.candles.length - 1;
+    ctx.font = '11px system-ui'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    const name = indicatorLabel(st);
+    ctx.fillStyle = this.theme.axisText;
+    ctx.fillText(name, x, y);
+    let xx = x + ctx.measureText(name).width + 8;
+    for (const ln of (r?.lines || []).slice(0, 5)) {
+      const v = ln.v[i]; if (v == null) continue;
+      const s = def.pane === 'main' ? this.fmt(v) : fmtNum(v);
+      ctx.fillStyle = ln.color; ctx.fillText(s, xx, y); xx += ctx.measureText(s).width + 8;
+    }
+    if (r?.hist?.[0]) { const v = r.hist[0].v[i]; if (v != null) { const s = fmtNum(v); ctx.fillStyle = r.hist[0].colors[i]; ctx.fillText(s, xx, y); xx += ctx.measureText(s).width + 8; } }
+    this._legendHits.push({ x0: x - 4, x1: xx, y0: y - 9, y1: y + 9, id: st.id });
+  }
+
+  _drawPane(pn, from, to, tLabels) {
+    const { ctx, theme: th } = this;
+    const { w } = this.plot;
+    const r = this.studyResult(pn.st);
+    ctx.save(); ctx.beginPath(); ctx.rect(0, pn.top, w + AXIS_W, pn.h); ctx.clip();
+    ctx.strokeStyle = th.grid; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, pn.top + 0.5); ctx.lineTo(this.W, pn.top + 0.5); ctx.stroke();
+    if (!r) { ctx.restore(); return; }
+    let lo = Infinity, hi = -Infinity;
+    if (r.range) [lo, hi] = r.range;
+    else {
+      const acc = v => { if (v != null && isFinite(v)) { if (v < lo) lo = v; if (v > hi) hi = v; } };
+      for (const ln of r.lines || []) for (let i = from; i <= to; i++) acc(ln.v[i]);
+      for (const hs of r.hist || []) for (let i = from; i <= to; i++) acc(hs.v[i]);
+      for (const lv of r.levels || []) acc(lv.p);
+      if (!isFinite(lo)) { lo = 0; hi = 1; }
+      const pad = (hi - lo) * 0.1 || 1; lo -= pad; hi += pad;
+    }
+    const top = pn.top + 6, hh = pn.h - 12;
+    const map = v => top + ((hi - v) / (hi - lo)) * hh;
+    map.inv = y => hi - ((y - top) / hh) * (hi - lo);
+    pn.map = { f: map, inv: map.inv, lo, hi };
+    if (r.zone) { ctx.fillStyle = 'rgba(126,87,194,.07)'; const y0 = map(r.zone[1]), y1 = map(r.zone[0]); ctx.fillRect(0, y0, w, y1 - y0); }
+    for (const lv of r.levels || []) {
+      const y = Math.round(map(lv.p)) + 0.5; ctx.strokeStyle = lv.color; ctx.setLineDash(lv.dash || []); ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); ctx.setLineDash([]);
+    }
+    ctx.beginPath(); ctx.rect(0, pn.top, w, pn.h); ctx.clip();
+    this._drawResult(r, from, to, map, { back: true });
+    this._drawResult(r, from, to, map, { back: false });
+    ctx.restore();
+    this._legend(pn.st, 10, pn.top + 12, r);
+    pn.r = r;
+  }
+  _paneAxis(pn) {
+    if (!pn.map) return;
+    const { ctx } = this, { lo, hi, f } = pn.map;
+    ctx.fillStyle = this.theme.axisText; ctx.font = '10px system-ui'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    const st = niceStep((hi - lo) / Math.max(2, pn.h / 30));
+    for (let v = Math.ceil(lo / st) * st; v <= hi; v += st) { const y = f(v); if (y > pn.top + 6 && y < pn.top + pn.h - 4) ctx.fillText(fmtNum(v), this.plot.w + 8, y); }
+    const n = this.candles.length - 1;
+    for (const ln of (pn.r?.lines || []).slice(0, 2)) { const v = ln.v[n]; if (v != null) this._axisLabel(f(v), fmtNum(v), ln.color, '#fff'); }
   }
 
   _drawSeries(s, from, to) {
@@ -620,7 +832,8 @@ export class Chart {
     const { g, P } = this._geo(d);
     render(ctx, g, selected);
     if (selected) {
-      for (const p of P) {
+      const tl = TOOLS[d.tool];
+      for (const p of (tl.freehand ? [P[0], P[P.length - 1]] : P)) {
         ctx.beginPath(); ctx.arc(p.x, p.y, this.cursor?.touch ? 7 : 5, 0, Math.PI * 2);
         ctx.fillStyle = this.theme.bg; ctx.fill(); ctx.strokeStyle = '#2962ff'; ctx.lineWidth = 2; ctx.stroke();
       }
@@ -629,7 +842,7 @@ export class Chart {
 
   _axisLabel(y, s, bg, fg, sub) {
     const { ctx } = this, x = this.plot.w + 1, hgt = sub ? 30 : 18;
-    if (y < -20 || y > this.plot.h + 20) return;
+    if (y < -20 || y > this.timeY + 10) return;
     ctx.fillStyle = bg; roundRect(ctx, x, y - 9, AXIS_W - 2, hgt, 2); ctx.fill();
     ctx.fillStyle = fg; ctx.font = 'bold 11px system-ui'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     ctx.fillText(s, x + 6, y);
@@ -639,9 +852,9 @@ export class Chart {
     const { ctx } = this;
     ctx.font = '11px system-ui';
     const tw = ctx.measureText(s).width + 12;
-    ctx.fillStyle = bg; roundRect(ctx, x - tw / 2, this.plot.h + 2, tw, 20, 2); ctx.fill();
+    ctx.fillStyle = bg; roundRect(ctx, x - tw / 2, this.timeY + 2, tw, 20, 2); ctx.fill();
     ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(s, x, this.plot.h + 12);
+    ctx.fillText(s, x, this.timeY + 12);
   }
   _timeTicks(from, to) {
     const iv = [60e3, 300e3, 900e3, 1800e3, 3600e3, 7200e3, 10800e3, 21600e3, 43200e3, 86400e3, 2 * 86400e3, 7 * 86400e3, 30 * 86400e3, 91 * 86400e3, 365 * 86400e3];
@@ -672,11 +885,42 @@ export class Chart {
     return out;
   }
 
+  // ---------- Replay ----------
+  startReplay(i) {
+    const full = this.replay ? this.replay.full : this.candles;
+    this.replay = { full, idx: i };
+    this.candles = full.slice(0, i + 1);
+    this.scroll = i + this.rightMargin; this.autoScale = true;
+    this.emit('replay', this.replay); this.invalidate();
+  }
+  replayStep(n = 1) {
+    const r = this.replay; if (!r) return false;
+    if (r.idx >= r.full.length - 1) return false;
+    r.idx = Math.min(r.full.length - 1, r.idx + n);
+    const atEnd = this.scroll >= this.candles.length - 1;
+    this.candles = r.full.slice(0, r.idx + 1);
+    if (atEnd) this.scroll = r.idx + this.rightMargin;
+    this.emit('replay', r); this.invalidate();
+    return true;
+  }
+  stopReplay() {
+    if (!this.replay) return;
+    this.candles = this.replay.full; this.replay = null;
+    this.goLatest(); this.emit('replay', null);
+  }
+
   screenshot() { return this.canvas.toDataURL('image/png'); }
 }
 
 const BULAN = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
 const pad = n => String(n).padStart(2, '0');
+function fmtNum(v) {
+  const a = Math.abs(v);
+  if (a >= 1e9) return (v / 1e9).toFixed(2) + 'B';
+  if (a >= 1e6) return (v / 1e6).toFixed(2) + 'M';
+  if (a >= 1e4) return (v / 1e3).toFixed(1) + 'K';
+  return v.toLocaleString('id-ID', { maximumFractionDigits: a >= 100 ? 1 : a >= 1 ? 2 : 5 });
+}
 function niceStep(raw) {
   const p = 10 ** Math.floor(Math.log10(raw)), f = raw / p;
   return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p;

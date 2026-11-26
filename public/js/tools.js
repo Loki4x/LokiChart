@@ -117,7 +117,10 @@ export const CATEGORIES = [
   ['fib', 'Gann dan Fibonacci'],
   ['motif', 'Motif'],
   ['proyeksi', 'Proyeksi dan Pengukuran'],
-  ['bentuk', 'Bentuk dan Teks'],
+  ['volume', 'Berbasis Volume'],
+  ['kuas', 'Kuas'],
+  ['teks', 'Teks dan Catatan'],
+  ['bentuk', 'Bentuk'],
 ];
 
 // Alat utilitas (bukan gambar) untuk tab "Peralatan" — ditangani di app.js
@@ -538,7 +541,160 @@ export const TOOLS = {
   daterange: { name: 'Rentang Tanggal', cat: 'proyeksi', n: 2, icon: I.drange, build: (g, [a, b], d, c) => measureBox(g, a, b, c, false, true) },
   dateprice: { name: 'Rentang Tanggal dan Harga', cat: 'proyeksi', n: 2, icon: I.dprange, build: (g, [a, b], d, c) => measureBox(g, a, b, c, true, true) },
 
-  // ===================== BENTUK & TEKS =====================
+  // ===================== BERBASIS VOLUME =====================
+  avwap: {
+    name: 'VWAP Berjangkar', cat: 'volume', n: 1, icon: 'M3 18C8 16 10 8 14 9S19 6 21 5 M3 18m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0',
+    build(g, [a], d, c) {
+      const bars = c.bars(a.i, c.lastIndex());
+      let pv = 0, vol = 0; const pts = [];
+      for (const b of bars) { const tp = (b.h + b.l + b.c) / 3, w = b.v || 1; pv += tp * w; vol += w; pts.push({ x: c.ix(b.i), y: c.py(pv / vol) }); }
+      if (pts.length < 2) return g.seg(a, { x: a.x + 1, y: a.y });
+      g.poly(pts);
+      const l = pts[pts.length - 1];
+      g.text(l.x + 6, l.y, `VWAP ${c.fmt(c.yp(l.y))}`, { font: '11px system-ui' });
+    },
+  },
+  volprofile: {
+    name: 'Profil Volume Rentang Tetap', cat: 'volume', n: 2, icon: 'M3 3V21 M3 5H10 M3 8H15 M3 11H21 M3 14H13 M3 17H8 M3 20H5',
+    build(g, [a, b], d, c) {
+      const i0 = Math.min(a.i, b.i), i1 = Math.max(a.i, b.i);
+      const bars = c.bars(i0, i1);
+      const x0 = c.ix(i0), x1 = c.ix(i1);
+      if (!bars.length) return g.poly([{ x: x0, y: a.y }, { x: x1, y: a.y }, { x: x1, y: b.y }, { x: x0, y: b.y }, { x: x0, y: a.y }], { dash: [4, 4] });
+      let lo = Infinity, hi = -Infinity;
+      for (const k of bars) { lo = Math.min(lo, k.l); hi = Math.max(hi, k.h); }
+      const rows = 24, step = (hi - lo) / rows || 1, up = new Array(rows).fill(0), dn = new Array(rows).fill(0);
+      for (const k of bars) {
+        const r0 = Math.max(0, Math.floor((k.l - lo) / step)), r1 = Math.min(rows - 1, Math.floor((k.h - lo) / step));
+        const share = (k.v || 1) / (r1 - r0 + 1);
+        for (let r = r0; r <= r1; r++) (k.c >= k.o ? up : dn)[r] += share;
+      }
+      const tot = up.map((v, r) => v + dn[r]), max = Math.max(...tot), poc = tot.indexOf(max);
+      // area nilai 70%
+      const all = tot.reduce((s2, v) => s2 + v, 0);
+      let va = tot[poc], lo2 = poc, hi2 = poc;
+      while (va < all * 0.7 && (lo2 > 0 || hi2 < rows - 1)) {
+        const nl = lo2 > 0 ? tot[lo2 - 1] : -1, nh = hi2 < rows - 1 ? tot[hi2 + 1] : -1;
+        if (nh >= nl) va += tot[++hi2]; else va += tot[--lo2];
+      }
+      const W = Math.max(40, (x1 - x0) * 0.7);
+      g.area([{ x: x0, y: c.py(hi) }, { x: x1, y: c.py(hi) }, { x: x1, y: c.py(lo) }, { x: x0, y: c.py(lo) }], 'rgba(41,98,255,.04)');
+      for (let r = 0; r < rows; r++) {
+        const yT = c.py(lo + (r + 1) * step) + 1, yB = c.py(lo + r * step) - 1;
+        const inVA = r >= lo2 && r <= hi2;
+        const wu = (up[r] / max) * W, wd = (dn[r] / max) * W;
+        g.area([{ x: x0, y: yT }, { x: x0 + wu, y: yT }, { x: x0 + wu, y: yB }, { x: x0, y: yB }], inVA ? 'rgba(8,153,129,.55)' : 'rgba(8,153,129,.25)');
+        g.area([{ x: x0 + wu, y: yT }, { x: x0 + wu + wd, y: yT }, { x: x0 + wu + wd, y: yB }, { x: x0 + wu, y: yB }], inVA ? 'rgba(242,54,69,.55)' : 'rgba(242,54,69,.25)');
+      }
+      const pocY = c.py(lo + (poc + 0.5) * step);
+      g.seg({ x: x0, y: pocY }, { x: x1, y: pocY }, { color: '#f23645', width: 2, dash: [] });
+      g.text(x1 + 4, pocY, `POC ${c.fmt(lo + (poc + 0.5) * step)}`, { color: '#f23645', font: '11px system-ui' });
+      g.seg({ x: x0, y: c.py(hi) }, { x: x0, y: c.py(lo) }, { width: 1, dash: [] });
+    },
+  },
+
+  // ===================== KUAS =====================
+  brush: {
+    name: 'Kuas', cat: 'kuas', n: 0, freehand: true, icon: 'M3 21c3 0 4-2 4-4s2-3 4-1-1 5-8 5Z M11 15L20 4',
+    build: (g, P) => g.poly(P),
+  },
+  highlighter: {
+    name: 'Stabilo', cat: 'kuas', n: 0, freehand: true, icon: 'M4 20H12 M7 16L15 4L20 8L12 20Z',
+    defStyle: { color: '#ffeb3b', width: 3, dash: [] },
+    build: (g, P, d) => g.poly(P, { width: d.style.width * 5, color: rgba(d.style.color, 0.4) }),
+  },
+
+  // ===================== TEKS DAN CATATAN =====================
+  pricelabel: {
+    name: 'Label Harga', cat: 'teks', n: 1, icon: 'M3 8H15L21 12L15 16H3Z',
+    build(g, [a], d, c) {
+      g.circle(a, 3, { fill: d.style.color });
+      g.text(a.x + 10, a.y - 16, c.fmt(a.p), { color: '#fff', bg: d.style.color, font: 'bold 11px system-ui', hit: true });
+      g.seg(a, { x: a.x + 8, y: a.y - 12 });
+    },
+  },
+  pricenote: {
+    name: 'Catatan Harga', cat: 'teks', n: 2, icon: 'M3 20L14 9 M14 5H21V12H14Z',
+    build(g, [a, b], d, c) {
+      g.seg(a, b); g.circle(a, 3, { fill: d.style.color });
+      g.text(b.x, b.y - 2, c.fmt(a.p), { color: '#fff', bg: d.style.color, align: 'center', base: 'bottom', font: 'bold 11px system-ui', hit: true });
+    },
+  },
+  flag: {
+    name: 'Bendera', cat: 'teks', n: 1, icon: 'M5 21V3 M5 4H18L15 8L18 12H5',
+    build(g, [a], d) {
+      g.seg(a, { x: a.x, y: a.y - 30 }, { width: 2 });
+      g.area([{ x: a.x, y: a.y - 30 }, { x: a.x + 22, y: a.y - 30 }, { x: a.x + 16, y: a.y - 24 }, { x: a.x + 22, y: a.y - 18 }, { x: a.x, y: a.y - 18 }], d.style.color);
+    },
+  },
+  signpost: {
+    name: 'Penanda', cat: 'teks', n: 1, needsText: true, icon: 'M12 21V9 M5 3H19V9H5Z',
+    build(g, [a], d, c) {
+      g.seg({ x: a.x, y: a.y }, { x: a.x, y: a.y - 34 }, { width: 1, dash: [3, 3] });
+      g.circle(a, 3, { fill: d.style.color });
+      g.text(a.x, a.y - 36, d.text || 'Penanda', { color: '#fff', bg: d.style.color, align: 'center', base: 'bottom', font: '12px system-ui', hit: true });
+    },
+  },
+  note: {
+    name: 'Komentar', cat: 'teks', n: 1, needsText: true, icon: 'M4 4H20V16H9L4 20Z',
+    build(g, [a], d) {
+      const t = d.text || 'Komentar';
+      g.text(a.x + 4, a.y - 14, t, { color: '#131722', bg: rgba(d.style.color, 0.25), font: '12px system-ui', hit: true });
+      g.poly([a, { x: a.x + 4, y: a.y - 6 }, { x: a.x + 12, y: a.y - 6 }], { fill: rgba(d.style.color, 0.25), close: true, stroke: false });
+    },
+  },
+  arrowup: {
+    name: 'Penanda Panah Naik', cat: 'teks', n: 1, icon: 'M12 20V5 M6 11L12 5L18 11',
+    defStyle: { color: '#089981', width: 2, dash: [] },
+    build: (g, [a], d) => g.area([{ x: a.x, y: a.y }, { x: a.x + 9, y: a.y + 12 }, { x: a.x + 4, y: a.y + 12 }, { x: a.x + 4, y: a.y + 24 }, { x: a.x - 4, y: a.y + 24 }, { x: a.x - 4, y: a.y + 12 }, { x: a.x - 9, y: a.y + 12 }], d.style.color),
+  },
+  arrowdown: {
+    name: 'Penanda Panah Turun', cat: 'teks', n: 1, icon: 'M12 4V19 M6 13L12 19L18 13',
+    defStyle: { color: '#f23645', width: 2, dash: [] },
+    build: (g, [a], d) => g.area([{ x: a.x, y: a.y }, { x: a.x + 9, y: a.y - 12 }, { x: a.x + 4, y: a.y - 12 }, { x: a.x + 4, y: a.y - 24 }, { x: a.x - 4, y: a.y - 24 }, { x: a.x - 4, y: a.y - 12 }, { x: a.x - 9, y: a.y - 12 }], d.style.color),
+  },
+
+  // ===================== BENTUK =====================
+  rotrect: {
+    name: 'Persegi Diputar', cat: 'bentuk', n: 3, icon: 'M3 12L12 3L21 12L12 21Z',
+    build(g, [a, b, c3], d) {
+      if (!c3) return g.seg(a, b);
+      const dv = dir(a, b); if (!dv) return;
+      const nx = -dv.y, ny = dv.x, off = (c3.x - a.x) * nx + (c3.y - a.y) * ny;
+      const pts = [a, b, { x: b.x + nx * off, y: b.y + ny * off }, { x: a.x + nx * off, y: a.y + ny * off }];
+      g.area(pts, rgba(d.style.color, 0.15)).poly([...pts, a]);
+    },
+  },
+  circle: {
+    name: 'Lingkaran', cat: 'bentuk', n: 2, icon: 'M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0',
+    build: (g, [a, b], d) => g.circle(a, Math.hypot(b.x - a.x, b.y - a.y), { fill: rgba(d.style.color, 0.15) }),
+  },
+  triangle: {
+    name: 'Segitiga', cat: 'bentuk', n: 3, icon: 'M12 3L22 20H2Z',
+    build: (g, P, d) => P.length < 3 ? g.seg(P[0], P[1]) : g.area(P, rgba(d.style.color, 0.15)).poly([...P, P[0]]),
+  },
+  arcshape: {
+    name: 'Busur', cat: 'bentuk', n: 3, icon: 'M3 18Q12 0 21 18',
+    build: (g, P, d) => P.length < 3 ? g.seg(P[0], P[1]) : g.poly(quad(P[0], ctrlThrough(P[0], P[2], P[1]), P[2]), { fill: rgba(d.style.color, 0.12), close: true }),
+  },
+  curve: {
+    name: 'Kurva', cat: 'bentuk', n: 3, icon: 'M3 18Q8 2 21 12',
+    build: (g, P) => P.length < 3 ? g.seg(P[0], P[1]) : g.poly(quad(P[0], P[2], P[1])).seg(P[0], P[2], { dash: [2, 3], width: 1, color: '#9598a1' }).seg(P[2], P[1], { dash: [2, 3], width: 1, color: '#9598a1' }),
+  },
+  doublecurve: {
+    name: 'Kurva Ganda', cat: 'bentuk', n: 4, icon: 'M2 12C6 0 10 0 12 12S18 24 22 12',
+    build: (g, P) => P.length < 4 ? g.poly(P) : g.poly(cubic(P[0], P[2], P[3], P[1])),
+  },
+  path: {
+    name: 'Jalur', cat: 'bentuk', n: Infinity, icon: 'M3 20L8 10L14 14L21 4 M18 4H21V7',
+    build: (g, P) => { g.poly(P); if (P.length > 1) g.arrowHead(P[P.length - 2], P[P.length - 1], 10); },
+  },
+  polyline: {
+    name: 'Polyline', cat: 'bentuk', n: Infinity, icon: 'M3 18L8 6L16 9L21 19Z',
+    build: (g, P, d) => P.length > 2 ? g.area(P, rgba(d.style.color, 0.12)).poly([...P, P[0]]) : g.poly(P),
+  },
+
+  // ===================== BENTUK & TEKS (lama) =====================
   rect: {
     name: 'Persegi Panjang', cat: 'bentuk', n: 2, icon: I.rect,
     build: (g, [a, b], d) => g.area([a, { x: b.x, y: a.y }, b, { x: a.x, y: b.y }], rgba(d.style.color, 0.15)).poly([a, { x: b.x, y: a.y }, b, { x: a.x, y: b.y }, a]),
@@ -549,17 +705,30 @@ export const TOOLS = {
   },
   arrow: { name: 'Panah', cat: 'bentuk', n: 2, icon: I.arrow, build: (g, [a, b]) => g.seg(a, b).arrowHead(a, b, 12) },
   text: {
-    name: 'Teks', cat: 'bentuk', n: 1, icon: I.text, needsText: true,
+    name: 'Teks', cat: 'teks', n: 1, icon: I.text, needsText: true,
     build: (g, [a], d) => g.text(a.x, a.y, d.text || 'Teks', { font: `${(d.style.width || 1) * 4 + 10}px system-ui`, hit: true, dash: [] }),
   },
   callout: {
-    name: 'Catatan', cat: 'bentuk', n: 2, icon: I.callout, needsText: true,
+    name: 'Catatan', cat: 'teks', n: 2, icon: I.callout, needsText: true,
     build(g, [a, b], d) {
       g.seg(a, b);
       g.text(b.x, b.y, d.text || 'Catatan', { color: '#fff', bg: d.style.color, align: 'center', font: '13px system-ui', hit: true });
     },
   },
 };
+
+function quad(a, c, b, n = 32) {
+  const out = [];
+  for (let k = 0; k <= n; k++) { const t = k / n, u = 1 - t; out.push({ x: u * u * a.x + 2 * u * t * c.x + t * t * b.x, y: u * u * a.y + 2 * u * t * c.y + t * t * b.y }); }
+  return out;
+}
+function cubic(a, c1, c2, b, n = 48) {
+  const out = [];
+  for (let k = 0; k <= n; k++) { const t = k / n, u = 1 - t; out.push({ x: u ** 3 * a.x + 3 * u * u * t * c1.x + 3 * u * t * t * c2.x + t ** 3 * b.x, y: u ** 3 * a.y + 3 * u * u * t * c1.y + 3 * u * t * t * c2.y + t ** 3 * b.y }); }
+  return out;
+}
+// titik kontrol agar kurva kuadrat melewati titik m di t=0.5
+function ctrlThrough(a, b, m) { return { x: 2 * m.x - (a.x + b.x) / 2, y: 2 * m.y - (a.y + b.y) / 2 }; }
 
 function posConstrain(pts) {
   if (pts[2]) pts[2].t = pts[0].t;
