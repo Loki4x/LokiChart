@@ -11,6 +11,7 @@ Build dari setiap push ke `main` juga tersedia di tab **Actions** → *Build APK
 
 **Membuat rilis baru** (APK otomatis muncul di Releases) — pilih salah satu:
 - Dari HP/browser: tab **Actions** → *Build APK Android* → **Run workflow** → isi *Versi rilis* (mis. `1.1.0`) → **Run workflow**.
+- Dari halaman **Releases** → **Draft a new release** → buat tag baru (mis. `v1.1.0`) → **Publish release**. APK ditambahkan otomatis beberapa menit kemudian.
 - Dari git: `git tag v1.1.0 && git push origin v1.1.0`.
 
 Nomor versi dipakai sebagai `versionName` APK, dan `versionCode` naik otomatis sehingga APK baru bisa meng-update yang lama.
