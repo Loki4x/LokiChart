@@ -123,3 +123,15 @@ select { border: 1px solid var(--line); background: var(--panel); border-radius:
   #tfSelect { display: inline-block !important; }
 }
 #tfSelect { display: none; }
+
+/* Pengaturan */
+.modal-box.settings { height: auto; max-height: 92vh; overflow-y: auto; padding: 16px 20px; gap: 6px; }
+.settings h3 { margin: 14px 0 4px; font-size: 15px; }
+.settings label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--muted); margin: 6px 0; }
+.settings input, .settings select { border: 1px solid var(--line); background: var(--bg); color: var(--text); border-radius: 8px; padding: 10px 12px; font-size: 15px; }
+.settings input:disabled { opacity: .5; }
+.settings .note { color: var(--muted); font-size: 13px; margin: 6px 0 0; }
+.settings pre { white-space: pre-wrap; font: 13px system-ui; margin: 8px 0 0; }
+button.primary { margin-top: 14px; border: 0; background: var(--accent); color: #fff; padding: 12px; border-radius: 10px; font-weight: 600; cursor: pointer; }
+.src-badge { cursor: pointer; }
+body { padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }

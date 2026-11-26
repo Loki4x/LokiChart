@@ -2,9 +2,9 @@
 <html lang="id">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <meta name="theme-color" content="#ffffff" />
-  <title>Analis Chart</title>
+  <title>LokiChart</title>
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="icon" href="/icon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/css/app.css" />
@@ -38,6 +38,7 @@
       <button class="icon-btn" id="shotBtn" title="Simpan gambar chart"></button>
       <button class="icon-btn" id="fullBtn" title="Layar penuh"></button>
       <button class="icon-btn" id="wlBtn" title="Daftar pantau"></button>
+      <button class="icon-btn" id="setBtn" title="Pengaturan broker"></button>
     </header>
 
     <main id="main">
@@ -85,6 +86,25 @@
       </div>
       <div id="symTabs" class="chips"></div>
       <div id="symList" class="sym-list"></div>
+    </div>
+  </div>
+
+  <!-- Modal pengaturan broker -->
+  <div id="settingsModal" class="modal hidden">
+    <div class="modal-box settings">
+      <div class="panel-head"><h2>Pengaturan Broker</h2><button class="icon-btn" id="closeSet" title="Tutup"></button></div>
+      <p id="setNote" class="note"></p>
+      <h3>OANDA</h3>
+      <label>Token API<input id="oandaKey" type="password" autocomplete="off" /></label>
+      <label>Akun<select id="oandaEnv"><option value="practice">Practice (demo)</option><option value="live">Live</option></select></label>
+      <h3>FOREX.com</h3>
+      <label>Username<input id="fxUser" autocomplete="off" /></label>
+      <label>Password<input id="fxPass" type="password" autocomplete="off" /></label>
+      <label>AppKey<input id="fxKey" type="password" autocomplete="off" /></label>
+      <label>Base URL API (opsional)<input id="fxUrl" placeholder="https://ciapi.cityindex.com/TradingAPI" autocomplete="off" /></label>
+      <label>MarketId manual (opsional, JSON)<input id="fxIds" placeholder='{"XAUUSD":401153869}' autocomplete="off" /></label>
+      <button id="saveSet" class="primary">Simpan &amp; uji koneksi</button>
+      <pre id="setStatus"></pre>
     </div>
   </div>
 

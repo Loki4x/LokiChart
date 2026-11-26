@@ -2,10 +2,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { SYMBOLS, TIMEFRAMES, findSymbol } from './symbols.js';
-import { oanda } from './providers/oanda.js';
-import { forexcom } from './providers/forexcom.js';
-import { demo } from './providers/demo.js';
+import { getCandles as fetchCandles, listSymbols, brokerStatus } from '../public/js/data/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
@@ -20,44 +17,23 @@ if (fs.existsSync(envFile)) {
   }
 }
 
-const PROVIDERS = { oanda, forexcom };
+// Kredensial dari .env (versi web/server)
+const cfg = () => ({
+  oanda: { apiKey: process.env.OANDA_API_KEY, env: process.env.OANDA_ENV },
+  forexcom: {
+    username: process.env.FOREXCOM_USERNAME, password: process.env.FOREXCOM_PASSWORD,
+    appKey: process.env.FOREXCOM_APPKEY, baseUrl: process.env.FOREXCOM_BASE_URL, marketIds: process.env.FOREXCOM_MARKET_IDS,
+  },
+});
 
 // Cache singkat agar tidak membebani API broker saat polling
 const cache = new Map();
 const CACHE_MS = 1500;
-
-function aggregate(candles, tfSec) {
-  const ms = tfSec * 1000;
-  const out = [];
-  for (const c of candles) {
-    const t = Math.floor(c.t / ms) * ms;
-    const last = out[out.length - 1];
-    if (last && last.t === t) {
-      last.h = Math.max(last.h, c.h); last.l = Math.min(last.l, c.l); last.c = c.c; last.v += c.v;
-    } else out.push({ ...c, t });
-  }
-  return out;
-}
-
-async function getCandles(brokerName, sym, tf, count) {
-  const tfSec = TIMEFRAMES[tf];
-  if (!tfSec) throw new Error('Timeframe tidak dikenal');
-  const broker = PROVIDERS[brokerName];
-  if (!broker) throw new Error('Broker tidak dikenal');
-  const live = broker.configured();
-  const provider = live ? broker : demo;
-  const key = `${provider.name}|${brokerName}|${sym.symbol}|${tf}|${count}`;
+async function getCandles(broker, symbol, tf, count) {
+  const key = `${broker}|${symbol}|${tf}|${count}`;
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < CACHE_MS) return hit.data;
-
-  let candles;
-  if (provider !== demo && tf === '3m') {
-    // 3 menit tidak tersedia di semua broker -> agregasi dari 1 menit
-    candles = aggregate(await provider.candles(sym, 60, count * 3), 180).slice(-count);
-  } else {
-    candles = await provider.candles(sym, tfSec, count);
-  }
-  const data = { broker: brokerName, source: live ? 'live' : 'demo', symbol: sym.symbol, tf, digits: sym.digits, candles };
+  const data = await fetchCandles(cfg(), broker, symbol, tf, count);
   cache.set(key, { at: Date.now(), data });
   if (cache.size > 300) cache.delete(cache.keys().next().value);
   return data;
@@ -78,24 +54,15 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   try {
     if (url.pathname === '/api/status') {
-      return send(res, 200, {
-        brokers: Object.fromEntries(Object.entries(PROVIDERS).map(([k, p]) => [k, p.configured() ? 'live' : 'demo'])),
-      });
+      return send(res, 200, { brokers: brokerStatus(cfg()) });
     }
     if (url.pathname === '/api/symbols') {
-      const list = [];
-      for (const s of SYMBOLS) {
-        for (const b of ['oanda', 'forexcom']) {
-          if (s[b]) list.push({ symbol: s.symbol, desc: s.desc, type: s.type, icon: s.icon, broker: b, digits: s.digits });
-        }
-      }
+      const list = listSymbols();
       return send(res, 200, list);
     }
     if (url.pathname === '/api/candles') {
-      const sym = findSymbol(url.searchParams.get('symbol') || '');
-      if (!sym) return send(res, 404, { error: 'Simbol tidak ditemukan' });
       const count = Math.max(2, Math.min(5000, +(url.searchParams.get('count') || 500)));
-      const data = await getCandles(url.searchParams.get('broker') || 'oanda', sym, url.searchParams.get('tf') || '5m', count);
+      const data = await getCandles(url.searchParams.get('broker') || 'oanda', url.searchParams.get('symbol') || '', url.searchParams.get('tf') || '5m', count);
       return send(res, 200, data);
     }
     // File statis
@@ -113,8 +80,8 @@ const server = http.createServer(async (req, res) => {
 
 const PORT = +(process.env.PORT || 3000);
 server.listen(PORT, () => {
-  console.log(`Analis Chart berjalan di http://localhost:${PORT}`);
-  for (const [k, p] of Object.entries(PROVIDERS)) {
-    console.log(`  ${k.padEnd(9)}: ${p.configured() ? 'LIVE (kredensial terpasang)' : 'DEMO (isi kredensial di .env untuk data asli)'}`);
+  console.log(`LokiChart berjalan di http://localhost:${PORT}`);
+  for (const [k, v] of Object.entries(brokerStatus(cfg()))) {
+    console.log(`  ${k.padEnd(9)}: ${v === 'live' ? 'LIVE (kredensial terpasang)' : 'DEMO (isi kredensial di .env untuk data asli)'}`);
   }
 });

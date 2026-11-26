@@ -1,0 +1,11 @@
+{
+  "appId": "com.loki4x.lokichart",
+  "appName": "LokiChart",
+  "webDir": "public",
+  "android": {
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "CapacitorHttp": { "enabled": true }
+  }
+}

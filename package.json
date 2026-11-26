@@ -1,12 +1,23 @@
 {
-  "name": "analis-chart",
+  "name": "lokichart",
   "version": "1.0.0",
-  "description": "Aplikasi charting untuk analisa pasar dengan data candle dari OANDA dan FOREX.com",
+  "description": "Aplikasi charting analisa pasar dengan data candle OANDA dan FOREX.com (web + Android)",
   "type": "module",
   "scripts": {
     "start": "node server/server.js",
-    "dev": "node --watch server/server.js"
+    "dev": "node --watch server/server.js",
+    "android:add": "cap add android",
+    "android:sync": "cap sync android",
+    "android:build": "cap sync android && cd android && ./gradlew assembleDebug"
   },
-  "engines": { "node": ">=18" },
-  "license": "MIT"
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@capacitor/android": "^8.3.0",
+    "@capacitor/cli": "^8.3.0",
+    "@capacitor/core": "^8.3.0",
+    "@capacitor/assets": "^3.0.5"
+  }
 }

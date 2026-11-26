@@ -1,5 +1,6 @@
 import { Chart, THEMES } from './chart.js';
 import { TOOLS, CATEGORIES, UTILITIES } from './tools.js';
+import { ds, isNative, loadCreds, saveCreds } from './datasource.js';
 
 const $ = s => document.querySelector(s);
 const icon = (d, extra = '') => `<svg class="i" viewBox="0 0 24 24" ${extra}><path d="${d}"/></svg>`;
@@ -15,6 +16,7 @@ const IC = {
   search: 'M10 10m-6.5 0a6.5 6.5 0 1 0 13 0a6.5 6.5 0 1 0 -13 0 M20 20L15 15', plus: 'M12 5V19 M5 12H19',
   all: 'M4 4h6v6h-6z M14 4h6v6h-6z M4 14h6v6h-6z M14 14h6v6h-6z', clone: 'M8 8H20V20H8Z M4 16V4H16',
   trash: 'M4 6H20 M9 6V3H15V6 M6 6L7 21H17L18 6', lock: 'M6 11H18V21H6Z M8 11V7a4 4 0 0 1 8 0', unlock: 'M6 11H18V21H6Z M8 11V7a4 4 0 0 1 7.5 -2',
+  gear: 'M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0 M12 2V5 M12 19V22 M2 12H5 M19 12H22 M4.9 4.9L7 7 M17 17L19.1 19.1 M4.9 19.1L7 17 M17 7L19.1 4.9',
   dash: 'M3 12H7 M10 12H14 M17 12H21', extend: 'M3 12H21 M17 8L21 12L17 16', text: 'M5 5H19 M12 5V20 M9 20H15',
 };
 
@@ -54,12 +56,6 @@ function toast(msg, ms = 2200) {
 
 // ---------- Data ----------
 let pollTimer = null, loadSeq = 0;
-async function api(path) {
-  const r = await fetch(path);
-  const j = await r.json();
-  if (!r.ok) throw new Error(j.error || r.statusText);
-  return j;
-}
 async function loadChart() {
   const seq = ++loadSeq;
   clearInterval(pollTimer);
@@ -67,7 +63,7 @@ async function loadChart() {
   chart.setData([], {});
   chart.setDrawings(JSON.parse(localStorage.getItem(`ac:drawings:${state.symbol}`) || '[]'));
   try {
-    const d = await api(`/api/candles?symbol=${state.symbol}&broker=${state.broker}&tf=${state.tf}&count=1500`);
+    const d = await ds.candles(state.broker, state.symbol, state.tf, 1500);
     if (seq !== loadSeq) return;
     chart.setData(d.candles, { tfMs: TF_MS[state.tf], digits: d.digits });
     setSource(d.source);
@@ -80,7 +76,7 @@ async function loadChart() {
 async function poll() {
   const seq = loadSeq;
   try {
-    const d = await api(`/api/candles?symbol=${state.symbol}&broker=${state.broker}&tf=${state.tf}&count=3`);
+    const d = await ds.candles(state.broker, state.symbol, state.tf, 3);
     if (seq !== loadSeq) return;
     chart.updateLast(d.candles);
     if (!hoverInfo) updateLegend();
@@ -91,7 +87,7 @@ function setSource(src) {
   const b = $('#srcBadge');
   b.className = 'src-badge ' + src;
   b.textContent = src === 'live' ? '● LIVE' : 'DATA DEMO';
-  b.title = src === 'live' ? 'Data langsung dari broker' : 'Kredensial broker belum diisi di .env — menampilkan data sintetis, bukan harga pasar asli';
+  b.title = src === 'live' ? 'Data langsung dari broker' : 'Kredensial broker belum diisi — menampilkan data sintetis, bukan harga pasar asli. Ketuk untuk membuka Pengaturan.';
 }
 
 // ---------- Header ----------
@@ -111,7 +107,7 @@ function renderHeader() {
   document.querySelectorAll('#tfBar button').forEach(b => b.classList.toggle('on', b.dataset.tf === state.tf));
   $('#tfSelect').value = state.tf;
   $('#chartType').value = state.chartType;
-  document.title = `${state.symbol} · ${BROKERS[state.broker]} — Analis Chart`;
+  document.title = `${state.symbol} · ${BROKERS[state.broker]} — LokiChart`;
   renderWatchlist();
 }
 $('#tfBar').innerHTML = TFS.map(([v, l]) => `<button data-tf="${v}">${l}</button>`).join('');
@@ -132,7 +128,7 @@ document.addEventListener('click', e => { if (!e.target.closest('#indMenu')) $('
 
 $('#undoBtn').innerHTML = icon(IC.undo); $('#redoBtn').innerHTML = icon(IC.redo);
 $('#themeBtn').innerHTML = icon(IC.theme); $('#shotBtn').innerHTML = icon(IC.camera);
-$('#fullBtn').innerHTML = icon(IC.full); $('#wlBtn').innerHTML = icon(IC.list);
+$('#fullBtn').innerHTML = icon(IC.full); $('#setBtn').innerHTML = icon(IC.gear); $('#closeSet').innerHTML = icon(IC.close); $('#wlBtn').innerHTML = icon(IC.list);
 $('#closeDraw').innerHTML = icon(IC.close); $('#closeSearch').innerHTML = icon(IC.back);
 $('.search-ico').innerHTML = icon(IC.search); $('#wlAdd').innerHTML = icon(IC.plus);
 $('#undoBtn').onclick = () => chart.undo();
@@ -358,7 +354,7 @@ const quotes = {};
 async function refreshQuotes() {
   await Promise.all(state.watchlist.map(async ([s, b]) => {
     try {
-      const d = await api(`/api/candles?symbol=${s}&broker=${b}&tf=1D&count=2`);
+      const d = await ds.candles(b, s, '1D', 2);
       const [p, c] = d.candles.length > 1 ? d.candles.slice(-2) : [d.candles[0], d.candles[0]];
       quotes[`${s}|${b}`] = { last: c.c, prev: p.c, open: c.o, high: c.h, low: c.l, digits: d.digits, source: d.source };
     } catch { /* abaikan */ }
@@ -454,9 +450,50 @@ document.addEventListener('keydown', e => {
   }
 });
 
+// ---------- Pengaturan (kredensial broker) ----------
+const F = ['oandaKey', 'oandaEnv', 'fxUser', 'fxPass', 'fxKey', 'fxUrl', 'fxIds'];
+function openSettings() {
+  const c = loadCreds(), server = ds.mode === 'server';
+  const v = {
+    oandaKey: c.oanda?.apiKey || '', oandaEnv: c.oanda?.env || 'practice',
+    fxUser: c.forexcom?.username || '', fxPass: c.forexcom?.password || '', fxKey: c.forexcom?.appKey || '',
+    fxUrl: c.forexcom?.baseUrl || '', fxIds: c.forexcom?.marketIds || '',
+  };
+  for (const k of F) { $('#' + k).value = v[k]; $('#' + k).disabled = server; }
+  $('#setNote').innerHTML = server
+    ? 'Versi web ini memakai server: kredensial diatur di file <code>.env</code> server, bukan di sini.'
+    : 'Kredensial hanya disimpan di perangkat ini dan dikirim langsung ke server broker. Kosongkan untuk memakai data demo.';
+  $('#saveSet').classList.toggle('hidden', server);
+  $('#setStatus').textContent = '';
+  $('#settingsModal').classList.remove('hidden');
+}
+$('#setBtn').onclick = openSettings;
+$('#srcBadge').onclick = openSettings;
+$('#closeSet').onclick = () => $('#settingsModal').classList.add('hidden');
+$('#settingsModal').onclick = e => { if (e.target.id === 'settingsModal') $('#settingsModal').classList.add('hidden'); };
+$('#saveSet').onclick = async () => {
+  const g = k => $('#' + k).value.trim();
+  saveCreds({
+    oanda: { apiKey: g('oandaKey'), env: g('oandaEnv') },
+    forexcom: { username: g('fxUser'), password: $('#fxPass').value, appKey: g('fxKey'), baseUrl: g('fxUrl'), marketIds: g('fxIds') },
+  });
+  $('#setStatus').textContent = 'Menguji koneksi…';
+  const out = [];
+  for (const b of ['oanda', 'forexcom']) {
+    const st = (await ds.status())[b];
+    if (st !== 'live') { out.push(`${BROKERS[b]}: demo (belum diisi)`); continue; }
+    try { await ds.candles(b, 'EURUSD', '1h', 2); out.push(`${BROKERS[b]}: ✓ terhubung`); }
+    catch (e) { out.push(`${BROKERS[b]}: ✗ ${e.message}`); }
+  }
+  $('#setStatus').textContent = out.join('\n');
+  loadChart(); refreshQuotes();
+};
+
 // ---------- Mulai ----------
 (async function init() {
-  try { SYMBOLS = await api('/api/symbols'); } catch (e) { toast('Server tidak dapat dihubungi'); }
+  await ds.init();
+  if (isNative()) $('#shotBtn').classList.add('hidden');
+  try { SYMBOLS = await ds.symbols(); } catch (e) { toast('Gagal memuat daftar simbol'); }
   if (!symInfo(state.symbol, state.broker)) { state.symbol = 'XAUUSD'; state.broker = 'oanda'; }
   renderToolTabs(); renderToolGrid(); renderRail();
   await loadChart();

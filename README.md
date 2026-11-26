@@ -1,30 +1,73 @@
 # LokiChart
 
-Aplikasi charting untuk analisa pasar (web, ramah tablet/HP) dengan data candle dari **OANDA** dan **FOREX.com**, plus lebih dari 55 alat gambar.
+Aplikasi charting untuk analisa pasar — **aplikasi Android (APK)** dan versi web — dengan data candle dari **OANDA** dan **FOREX.com**, plus lebih dari 55 alat gambar.
 
-## Menjalankan
+## Aplikasi Android (APK)
 
-Butuh Node.js 18+. Tanpa dependensi tambahan.
+APK di-build otomatis oleh **GitHub Actions** (`.github/workflows/android.yml`) setiap ada push ke `main`.
+
+**Mengunduh APK:** buka tab **Actions** → workflow *Build APK Android* → run terbaru → bagian **Artifacts** → `LokiChart-apk` (berupa zip, isinya `LokiChart.apk`).
+Untuk rilis yang mudah diunduh dari HP, buat tag versi (mis. `v1.0.0`); APK akan otomatis dilampirkan di **Releases**.
+
+**Kredensial broker** diisi di dalam aplikasi: ketuk ikon ⚙ (atau badge "DATA DEMO") → isi token OANDA dan/atau akun FOREX.com → *Simpan & uji koneksi*.
+Kredensial disimpan hanya di HP dan aplikasi menghubungi OANDA/FOREX.com secara langsung — tidak perlu server.
+
+> Kredensial broker sengaja **tidak** dimasukkan ke GitHub Secrets/APK: repo ini public, sehingga APK bisa diunduh siapa saja dan isi APK dapat dibongkar.
+
+### Secrets GitHub (opsional, untuk tanda tangan APK)
+
+Tanpa secrets, workflow membuat APK *debug*. Agar APK bertanda tangan tetap (update tanpa uninstall), buat keystore sekali di komputer:
+
+```bash
+keytool -genkeypair -v -keystore lokichart.keystore -alias lokichart -keyalg RSA -keysize 2048 -validity 10000
+base64 -w0 lokichart.keystore > keystore.txt
+```
+
+Lalu di GitHub: **Settings → Secrets and variables → Actions → New repository secret**:
+
+| Nama | Isi |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | isi file `keystore.txt` |
+| `ANDROID_KEYSTORE_PASSWORD` | password keystore |
+| `ANDROID_KEY_ALIAS` | `lokichart` |
+| `ANDROID_KEY_PASSWORD` | password key (boleh sama dengan password keystore) |
+
+Simpan file keystore baik-baik dan jangan di-commit — tanpa file itu, APK baru tidak bisa meng-update yang lama.
+
+### Build APK di komputer sendiri (opsional)
+
+Butuh Node 22+, JDK 21, dan Android SDK.
+
+```bash
+npm install
+npx cap add android
+npm run android:build
+```
+
+## Versi web (dengan server)
+
+Butuh Node.js 22+.
 
 ```bash
 cp .env.example .env    # isi kredensial broker
 npm start               # buka http://localhost:3000
 ```
 
-Jika kredensial belum diisi, server memakai **data demo sintetis** (badge oranye "DATA DEMO" di kanan atas) agar aplikasi tetap bisa dicoba. Data demo **bukan** harga pasar asli. Setelah kredensial diisi, badge berubah menjadi "● LIVE".
+Pada versi web, kredensial diatur di `.env` server (browser tidak bisa memanggil API broker langsung karena CORS).
+
+Jika kredensial belum diisi, aplikasi memakai **data demo sintetis** (badge oranye "DATA DEMO") agar tetap bisa dicoba. Data demo **bukan** harga pasar asli. Setelah kredensial diisi, badge berubah menjadi "● LIVE".
 
 ## Sumber data
 
-| Broker | API | Yang perlu diisi di `.env` |
+| Broker | API | Yang perlu diisi (web: `.env`) |
 |---|---|---|
-| OANDA | v20 REST (`/v3/instruments/{inst}/candles`) | `OANDA_API_KEY`, `OANDA_ENV` (`practice`/`live`) |
+| OANDA | v20 REST (`/v3/instruments/{inst}/candles`) | `OANDA_API_KEY`, `OANDA_ENV` (`practice`/`live`) — di Android: layar Pengaturan |
 | FOREX.com | GAIN Capital Trading API (`/session`, `/market/search`, `/market/{id}/barhistory`) | `FOREXCOM_USERNAME`, `FOREXCOM_PASSWORD`, `FOREXCOM_APPKEY`, opsional `FOREXCOM_BASE_URL`, `FOREXCOM_MARKET_IDS` |
 
-- Kredensial hanya disimpan di server; browser tidak pernah melihatnya.
 - Token OANDA dibuat di portal akun OANDA (Manage API Access).
 - Akses API FOREX.com (AppKey) harus diminta ke FOREX.com. Jika pencarian market otomatis tidak menemukan instrumen, isi `FOREXCOM_MARKET_IDS`, mis. `{"XAUUSD":401153869}`.
 - Timeframe: 1m, 3m, 5m, 15m, 30m, 1j, 2j, 4j, 1H, 1M. (3m diagregasi dari 1m.)
-- Daftar simbol ada di `server/symbols.js`; tambahkan simbol baru di sana.
+- Daftar simbol ada di `public/js/data/symbols.js`; tambahkan simbol baru di sana.
 
 ## Fitur
 
@@ -54,9 +97,11 @@ Pintasan: `Alt+T` garis tren, `Alt+H` garis horizontal, `Alt+F` Fib retracement,
 ## Struktur
 
 ```
-server/server.js         HTTP server + API (/api/candles, /api/symbols, /api/status)
-server/providers/        oanda.js, forexcom.js, demo.js
-server/symbols.js        daftar simbol & pemetaan ke kode broker
+server/server.js         HTTP server + API untuk versi web
+public/js/data/          koneksi broker (oanda.js, forexcom.js, demo.js) & daftar simbol — dipakai server dan aplikasi Android
+public/js/datasource.js  pilih sumber data: server (web) atau langsung (Android)
+capacitor.config.json    konfigurasi aplikasi Android (Capacitor)
+.github/workflows/       build APK otomatis
 public/js/chart.js       mesin chart (canvas)
 public/js/tools.js       definisi semua alat gambar
 public/js/geo.js         primitif gambar (render + hit-test)

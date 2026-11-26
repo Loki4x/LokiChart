@@ -30,7 +30,7 @@ function priceAt(tSec, base, seed) {
 export const demo = {
   name: 'demo',
   configured: () => true,
-  async candles(sym, tfSec, count) {
+  async candles(cfg, sym, tfSec, count) {
     const seed = seedOf(sym.symbol);
     const now = Math.floor(Date.now() / 1000);
     const lastOpen = Math.floor(now / tfSec) * tfSec;
