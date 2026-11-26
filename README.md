@@ -22,25 +22,21 @@ Kredensial disimpan hanya di HP dan aplikasi menghubungi OANDA/FOREX.com secara 
 
 > Kredensial broker sengaja **tidak** dimasukkan ke GitHub Secrets/APK: repo ini public, sehingga APK bisa diunduh siapa saja dan isi APK dapat dibongkar.
 
-### Secrets GitHub (opsional, untuk tanda tangan APK)
+### Kunci tanda tangan APK (WAJIB agar update tidak perlu uninstall)
 
-Tanpa secrets, workflow membuat APK *debug*. Agar APK bertanda tangan tetap (update tanpa uninstall), buat keystore sekali di komputer:
-
-```bash
-keytool -genkeypair -v -keystore lokichart.keystore -alias lokichart -keyalg RSA -keysize 2048 -validity 10000
-base64 -w0 lokichart.keystore > keystore.txt
-```
-
-Lalu di GitHub: **Settings → Secrets and variables → Actions → New repository secret**:
+Android hanya mau meng-update aplikasi bila APK baru ditandatangani dengan kunci yang **sama**.
+Cara termudah (bisa dari HP): di GitHub buka **Settings → Secrets and variables → Actions → New repository secret**:
 
 | Nama | Isi |
 |---|---|
-| `ANDROID_KEYSTORE_BASE64` | isi file `keystore.txt` |
-| `ANDROID_KEYSTORE_PASSWORD` | password keystore |
-| `ANDROID_KEY_ALIAS` | `lokichart` |
-| `ANDROID_KEY_PASSWORD` | password key (boleh sama dengan password keystore) |
+| `SIGNING_PASSPHRASE` | kata sandi panjang buatan Anda (minimal 12 karakter, disarankan 20+). **Simpan baik-baik dan jangan diganti.** |
 
-Simpan file keystore baik-baik dan jangan di-commit — tanpa file itu, APK baru tidak bisa meng-update yang lama.
+Workflow menurunkan kunci tanda tangan yang selalu sama dari kata sandi itu (`.github/scripts/derive_keystore.py`).
+Tanpa secret ini, setiap rilis memakai kunci acak sehingga update harus uninstall dulu.
+
+Alternatif bagi yang sudah punya keystore sendiri: isi `ANDROID_KEYSTORE_BASE64` (isi `base64 -w0 file.keystore`), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`.
+
+Sebelum uninstall, gunakan **Menu → Cadangkan data** lalu **Pulihkan data** setelah install ulang agar gambar, indikator, alarm, dan daftar pantau tidak hilang.
 
 ### Build APK di komputer sendiri (opsional)
 
@@ -90,7 +86,7 @@ Jika kredensial belum diisi, aplikasi memakai **data demo sintetis** (badge oran
 - **Replay bar:** saat memilih titik awal, bar setelahnya tampak pudar; putar/jeda, maju per bar, kecepatan 1x–25x
 - **Pusat analisis:** setup/simpan/buka layout, buat baru, pengaturan chart, detail simbol, teknikal
 - **Jelajahi:** kenaikan & penurunan terbesar, paling volatil, peta panas (per broker & kategori)
-- **Menu:** akun broker, tema, layar tetap menyala, bilah alat gambar di kiri (opsional), notifikasi, hapus data, versi aplikasi
+- **Menu:** akun broker, tema, layar tetap menyala, **cadangkan & pulihkan data**, bilah alat gambar di kiri (opsional), notifikasi, hapus data, versi aplikasi
 - **Gambar terpilih** menampilkan toolbar mengambang (bisa digeser): template, warna garis + opasitas, warna & ukuran teks, ketebalan, gaya garis, **pengaturan**, tambah peringatan, kunci, sembunyikan, hapus, lainnya (klon, urutan depan/belakang)
 - **Dialog pengaturan gambar:** tab **Corak** (warna/gaya/tebal garis, ujung panah kiri/kanan, perpanjang, titik tengah, label harga, statistik + posisi + selalu tampilkan, latar belakang, level Fibonacci), **Teks** (isi, warna, ukuran, tebal/miring, posisi), **Koordinat** (harga & waktu tiap titik), **Visibilitas** (per timeframe), **Template** (simpan, jadikan default, reset)
 

@@ -1,5 +1,6 @@
 // Halaman Jelajahi (penggerak pasar, peta panas) dan Menu (pengaturan aplikasi)
 import { ds, isNative } from './datasource.js';
+import { shareText } from './native.js';
 import { VERSION } from './version.js';
 
 const CATS = [['all', 'Semua'], ['forex', 'Forex'], ['commodity', 'Komoditas'], ['index', 'Indeks'], ['crypto', 'Kripto']];
@@ -80,6 +81,33 @@ export class MenuPage {
     } catch { /* tidak didukung */ }
     this.render();
   }
+  async backup() {
+    const withCreds = confirm('Sertakan kredensial broker (token/password) di file cadangan?\n\nPilih "Batal" jika file akan disimpan di tempat yang bisa dilihat orang lain.');
+    const data = {};
+    for (let k = 0; k < localStorage.length; k++) {
+      const key = localStorage.key(k);
+      if (key.startsWith('ac:') && (withCreds || key !== 'ac:creds')) data[key] = localStorage.getItem(key);
+    }
+    const name = `LokiChart-cadangan-${new Date().toISOString().slice(0, 10)}.json`;
+    try {
+      const r = await shareText(JSON.stringify({ app: 'LokiChart', version: VERSION, at: Date.now(), data }, null, 1), name);
+      this.api.toast(r === 'downloaded' ? 'File cadangan diunduh' : 'Pilih tempat menyimpan file cadangan');
+    } catch (e) { this.api.toast('Gagal mencadangkan: ' + e.message); }
+  }
+  restore() {
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = 'application/json,.json';
+    inp.onchange = async () => {
+      try {
+        const j = JSON.parse(await inp.files[0].text());
+        if (j.app !== 'LokiChart' || !j.data) throw new Error('bukan file cadangan LokiChart');
+        if (!confirm(`Pulihkan cadangan dari ${new Date(j.at).toLocaleString('id-ID')}? Data saat ini akan diganti.`)) return;
+        for (const [k, v] of Object.entries(j.data)) if (k.startsWith('ac:')) localStorage.setItem(k, v);
+        location.reload();
+      } catch (e) { this.api.toast('Gagal memulihkan: ' + e.message); }
+    };
+    inp.click();
+  }
   render() {
     const st = this.api.state;
     const item = (id, name, sub, right = '›') => `<div class="menu-item" data-m="${id}"><div class="nm">${name}${sub ? `<small>${sub}</small>` : ''}</div><span class="val">${right}</span></div>`;
@@ -96,6 +124,8 @@ export class MenuPage {
         ${item('notif', 'Notifikasi peringatan', 'Izinkan notifikasi untuk alarm harga')}
       </div>
       <div class="menu-list">
+        ${item('backup', 'Cadangkan data', 'Simpan gambar, indikator, alarm, daftar pantau ke file')}
+        ${item('restore', 'Pulihkan data', 'Muat dari file cadangan')}
         ${item('reset', 'Hapus data aplikasi', 'Gambar, indikator, alarm, daftar pantau', '')}
         ${item('about', 'Tentang LokiChart', `Versi ${VERSION}${isNative() ? ' · Android' : ' · Web'}`, '')}
       </div>`;
@@ -108,6 +138,8 @@ export class MenuPage {
       if (m === 'chart') this.api.openChartSettings();
       if (m === 'notif') this.api.askNotify();
       if (m === 'reset' && confirm('Hapus semua data LokiChart di perangkat ini (gambar, indikator, alarm, daftar pantau, kredensial)?')) { localStorage.clear(); location.reload(); }
+      if (m === 'backup') this.backup();
+      if (m === 'restore') this.restore();
       if (m === 'about') this.api.toast(`LokiChart ${VERSION} — data candle OANDA & FOREX.com`);
     };
   }

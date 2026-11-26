@@ -55,3 +55,17 @@ export async function shareImage(dataUrl, filename) {
   const a = document.createElement('a'); a.href = dataUrl; a.download = filename; a.click();
   return 'downloaded';
 }
+
+// Bagikan / simpan file teks (mis. cadangan JSON)
+export async function shareText(text, filename) {
+  const FS = plugin('Filesystem'), SH = plugin('Share');
+  if (FS && SH) {
+    const res = await FS.writeFile({ path: filename, data: text, directory: 'CACHE', encoding: 'utf8' });
+    await SH.share({ title: filename, files: [res.uri], dialogTitle: 'Simpan cadangan LokiChart' });
+    return 'shared';
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' })); a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  return 'downloaded';
+}

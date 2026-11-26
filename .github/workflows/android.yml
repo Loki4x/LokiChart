@@ -82,16 +82,23 @@ jobs:
             sed -i 's#<uses-permission android:name="android.permission.INTERNET" />#&\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />#' android/app/src/main/AndroidManifest.xml
           grep -n "versionCode\|versionName" android/app/build.gradle
 
-      - name: Siapkan keystore (dari Secrets GitHub)
+      - name: Siapkan kunci tanda tangan (dari Secrets GitHub)
         id: keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          SIGNING_PASSPHRASE: ${{ secrets.SIGNING_PASSPHRASE }}
         run: |
           if [ -n "$KEYSTORE_BASE64" ]; then
             echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
             echo "signed=true" >> "$GITHUB_OUTPUT"
+            echo "Memakai keystore dari ANDROID_KEYSTORE_BASE64"
+          elif [ -n "$SIGNING_PASSPHRASE" ]; then
+            pip install -q cryptography
+            python3 .github/scripts/derive_keystore.py "$RUNNER_TEMP/release.keystore"
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+            echo "Memakai kunci tetap yang diturunkan dari SIGNING_PASSPHRASE"
           else
-            echo "::warning::Secret ANDROID_KEYSTORE_BASE64 belum diisi — membuat APK debug. Update APK berikutnya mungkin harus uninstall dulu."
+            echo "::warning::Secret SIGNING_PASSPHRASE belum diisi — APK ditandatangani dengan kunci acak, jadi update harus uninstall dulu."
             echo "signed=false" >> "$GITHUB_OUTPUT"
           fi
 
@@ -99,9 +106,9 @@ jobs:
         if: steps.keystore.outputs.signed == 'true'
         working-directory: android
         env:
-          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' && secrets.ANDROID_KEYSTORE_PASSWORD || secrets.SIGNING_PASSPHRASE }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' && secrets.ANDROID_KEY_ALIAS || 'lokichart' }}
+          KEY_PASS: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' && secrets.ANDROID_KEY_PASSWORD || secrets.SIGNING_PASSPHRASE }}
         run: |
           chmod +x gradlew
           ./gradlew assembleRelease \
