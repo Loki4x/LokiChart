@@ -326,7 +326,14 @@ function renderTfWheelBtn() { tfWheel.render(); }
 // simbol terakhir (urutan tidak berubah saat berpindah lewat roda)
 const symWheel = makeWheel({
   btn: $('#symbolBtn'),
-  list: () => { const c = act().cfg, l = [...state.recent]; if (!l.some(r => r.symbol === c.symbol && r.broker === c.broker)) l.unshift({ symbol: c.symbol, broker: c.broker, tf: c.tf }); return l; },
+  // daftar dari Daftar Pantau; interval = interval terakhir yang dipakai untuk simbol itu (atau interval sekarang)
+  list: () => {
+    const c = act().cfg;
+    const tfOf = (sym, b) => state.recent.find(r => r.symbol === sym && r.broker === b)?.tf || c.tf;
+    const l = state.watchlist.map(([sym, b]) => ({ symbol: sym, broker: b, tf: sym === c.symbol && b === c.broker ? c.tf : tfOf(sym, b) }));
+    if (!l.some(r => r.symbol === c.symbol && r.broker === c.broker)) l.unshift({ symbol: c.symbol, broker: c.broker, tf: c.tf });
+    return l;
+  },
   current: () => ({ symbol: act().cfg.symbol, broker: act().cfg.broker, tf: act().cfg.tf }),
   same: (a, b) => a.symbol === b.symbol && a.broker === b.broker,
   short: x => `${x.symbol}`, long: x => `${x.symbol} <small>${BROKERS[x.broker]} · ${x.tf}</small>`,
@@ -1339,11 +1346,33 @@ function renderSymList() {
     return !q || s.symbol.includes(q) || s.desc.toUpperCase().includes(q);
   });
   const recent = !q && symTab === 'all' ? state.recent.map(r => symInfo(r.symbol, r.broker)).filter(Boolean) : [];
-  $('#symList').innerHTML = (recent.length ? '<div class="sym-sec">Simbol terbaru</div>' + recent.map(row).join('') + '<div class="sym-sec">Semua simbol</div>' : '') + (list.map(row).join('') || '<div class="empty">Simbol tidak ditemukan</div>');
+  // simbol Binance apa pun yang belum ada di daftar (spot "KODE", futures "KODE.P")
+  const qq = q.replace(/\s/g, ''), base = qq.replace(/\.P$/, '');
+  const extra = /^[A-Z0-9]{4,20}$/.test(base) && (symTab === 'all' || symTab === 'binance' || symTab === 'crypto')
+    ? [[base, 'Spot'], [base + '.P', 'Futures (perpetual)']].filter(([n]) => !symInfo(n, 'binance'))
+      .map(([n, k]) => `<div class="sym-row add-bn" data-bn="${n}">${symIconHtml(n)}<div><b>${n}</b><small>Tambahkan dari Binance ${k}</small></div><div class="r"><b>Binance</b><small>uji & tambahkan</small></div><span class="add">+</span></div>`).join('')
+    : '';
+  $('#symList').innerHTML = (recent.length ? '<div class="sym-sec">Simbol terbaru</div>' + recent.map(row).join('') + '<div class="sym-sec">Semua simbol</div>' : '') + (list.map(row).join('') || (extra ? '' : '<div class="empty">Simbol tidak ditemukan</div>')) + (extra ? '<div class="sym-sec">Cari di Binance</div>' + extra : '');
 }
 $('#symSearch').oninput = renderSymList;
 $('#symTabs').onclick = e => { if (e.target.dataset.k) { symTab = e.target.dataset.k; renderSymList(); } };
-$('#symList').onclick = e => {
+async function addBinanceSymbol(name) {
+  toast(`Memeriksa ${name} di Binance…`, 3000);
+  try {
+    const d = await ds.candles('binance', name, '1h', 2);
+    if (!d.candles.length) throw new Error('tidak ada data');
+    const fut = name.endsWith('.P'), code = fut ? name.slice(0, -2) : name;
+    const info = { symbol: name, desc: `${code} · Binance ${fut ? 'Futures (perpetual)' : 'Spot'}`, type: fut ? 'perpetual crypto' : 'spot crypto', icon: 'crypto', broker: 'binance', digits: d.digits, code: fut ? 'F:' + code : code };
+    state.customSymbols = [...(state.customSymbols || []).filter(x => x.symbol !== name), info];
+    if (!symInfo(name, 'binance')) SYMBOLS.push(info);
+    if (!state.watchlist.some(([a, b]) => a === name && b === 'binance')) state.watchlist.push([name, 'binance']);
+    save(); toast(`${name} ditambahkan dari Binance`);
+    return true;
+  } catch (e) { toast(`${name} tidak ditemukan di Binance (${e.message})`, 5000); return false; }
+}
+$('#symList').onclick = async e => {
+  const bn = e.target.closest('[data-bn]');
+  if (bn) { if (await addBinanceSymbol(bn.dataset.bn)) { $('#searchModal').classList.add('hidden'); setSymbol(bn.dataset.bn, 'binance'); renderWatchlist(); } return; }
   const r = e.target.closest('.sym-row'); if (!r) return;
   const { s, b } = r.dataset;
   if (e.target.closest('[data-add]')) {
@@ -1410,6 +1439,7 @@ const menuPage = new MenuPage($('#menuBody'), {
   document.body.classList.toggle('dark', state.theme === 'dark');
   await ds.init();
   try { SYMBOLS = await ds.symbols(); } catch { toast('Gagal memuat daftar simbol'); }
+  for (const cs of state.customSymbols || []) if (!symInfo(cs.symbol, cs.broker)) SYMBOLS.push(cs);
   try { brokerStatus = await ds.status(); } catch { /* */ }
   state.panes.forEach(p => { if (!symInfo(p.symbol, p.broker)) { p.symbol = 'XAUUSD'; p.broker = 'oanda'; } p.studies ||= defStudies(); p.chartType ||= 'candles'; });
   buildPanes();
@@ -1417,7 +1447,7 @@ const menuPage = new MenuPage($('#menuBody'), {
   applyRail();
   renderToolTabs(); renderToolGrid(); renderHeader(); renderReplayBar(); renderDrawMode();
   if (!state.recent.length) remember(act().cfg);
-  showPage(state.page || 'chart');
+  showPage('watch'); // aplikasi selalu dibuka di Daftar Pantau
   if (state.keepAwake) menuPage.setKeepAwake(true);
   refreshQuotes();
   setInterval(refreshQuotes, 15000);

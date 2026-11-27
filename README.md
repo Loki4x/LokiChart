@@ -66,7 +66,7 @@ Jika kredensial belum diisi, aplikasi memakai **data demo sintetis** (badge oran
 | Broker | API | Yang perlu diisi (web: `.env`) |
 |---|---|---|
 | OANDA | v20 REST (`/v3/instruments/{inst}/candles`) | `OANDA_API_KEY`, `OANDA_ENV` (`practice`/`live`) — di Android: layar Pengaturan |
-| Binance | API data pasar publik (`/api/v3/klines`, via `data-api.binance.vision` dengan cadangan `api.binance.com`) | **tidak perlu akun / API key** — 28 pasangan kripto spot (BTCUSDT, ETHUSDT, SOLUSDT, PAXGUSDT, …) |
+| Binance | API data pasar publik — Spot (`/api/v3/klines`, `data-api.binance.vision` + cadangan `api.binance.com`) dan Futures USDⓈ-M (`fapi.binance.com/fapi/v1/klines`) | **tidak perlu akun / API key** — 28 pasangan spot + perpetual **XAUUSDT.P (emas)**, **XAGUSDT.P (perak)**, BTCUSDT.P, ETHUSDT.P. Simbol Binance lain bisa ditambahkan lewat pencarian (ketik kodenya; akhiran `.P` = futures perpetual). Harga perpetual Binance bisa sedikit berbeda dari harga spot broker forex. |
 | FOREX.com | GAIN Capital Trading API (`/session`, `/market/search`, `/market/{id}/barhistory`) | `FOREXCOM_USERNAME`, `FOREXCOM_PASSWORD`, `FOREXCOM_APPKEY`, opsional `FOREXCOM_BASE_URL`, `FOREXCOM_MARKET_IDS` |
 
 - Token OANDA dibuat di portal akun OANDA (Manage API Access).
@@ -78,7 +78,8 @@ Jika kredensial belum diisi, aplikasi memakai **data demo sintetis** (badge oran
 
 - **Navigasi seperti aplikasi charting mobile:** Daftar Pantau · Chart · Jelajahi · Menu
 - **Daftar Pantau:** harga & perubahan, ikhtisar simbol (grafik 1H–Seluruh, perubahan hari ini & sepanjang data, poin data penting, rentang 52 minggu, **musiman**, meter **Teknikal** Jual kuat–Beli kuat), tombol *Buka chart*
-- **Roda simbol:** geser jari ke atas/bawah pada nama simbol di kiri bawah untuk berpindah antar simbol terakhir (beserta intervalnya); ketuk untuk mencari simbol
+- **Roda simbol:** geser jari ke atas/bawah pada nama simbol di kiri bawah untuk berpindah antar simbol di **Daftar Pantau** (dengan interval terakhir yang dipakai); ketuk untuk mencari simbol
+- Aplikasi selalu dibuka di halaman **Daftar Pantau**
 - **Roda interval favorit:** geser jari ke atas/bawah pada interval di kiri bawah untuk berpindah antar interval favorit (berputar); daftar muncul di tengah chart dan chart langsung berganti
 - **Panel Interval** (ketuk interval di kiri bawah): Rentang tanggal (1D, 5H, 1Bln, 3Bln, 6Bln, YTD, 1T, 5T, Semua), Favorit (tekan lama interval → ★), Detik, Menit, Jam, Hari, dan *Tambah interval khusus*
 - **Chart:** candle / candle kosong / Heikin Ashi / bar / garis / area; toolbar bawah (simbol, interval, Gambar, Indikator, Layout, Peringatan, Jenis chart, Replay, Pohon objek, Pusat analisis, Undo/Redo, Layar penuh, Bagikan)

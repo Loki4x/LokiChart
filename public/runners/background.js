@@ -39,9 +39,12 @@ async function oandaBars(cr, code, fromMs) {
 }
 async function binanceBars(code, fromMs) {
   const start = Math.max(fromMs, Date.now() - 16 * 3600e3);
+  const fut = code.startsWith('F:'), c = fut ? code.slice(2) : code;
+  const urls = fut ? [`https://fapi.binance.com/fapi/v1/klines?symbol=${c}&interval=1m&startTime=${start}&limit=1000`]
+    : ['https://data-api.binance.vision', 'https://api.binance.com'].map(h => `${h}/api/v3/klines?symbol=${c}&interval=1m&startTime=${start}&limit=1000`);
   let r = null;
-  for (const h of ['https://data-api.binance.vision', 'https://api.binance.com']) {
-    try { r = await fetch(`${h}/api/v3/klines?symbol=${code}&interval=1m&startTime=${start}&limit=1000`); if (r.ok) break; } catch (e) { r = null; }
+  for (const u of urls) {
+    try { r = await fetch(u); if (r.ok) break; } catch (e) { r = null; }
   }
   if (!r || !r.ok) throw new Error('Binance tidak dapat dihubungi');
   const j = await r.json();

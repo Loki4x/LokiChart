@@ -69,6 +69,11 @@ export const SYMBOLS = [
   // --- Kripto ---
   { symbol: 'LTCUSD', desc: 'Litecoin / U.S. Dollar', type: 'crypto cfd', icon: 'btc', oanda: 'LTC_USD', forexcom: 'LTC/USD', base: 95, digits: 2 },
   { symbol: 'BCHUSD', desc: 'Bitcoin Cash / U.S. Dollar', type: 'crypto cfd', icon: 'btc', oanda: 'BCH_USD', forexcom: 'BCH/USD', base: 450, digits: 2 },
+  // --- Binance Futures (perpetual USDⓈ-M) ---
+  { symbol: 'XAUUSDT.P', desc: 'Emas / TetherUS · Perpetual', type: 'perpetual futures', icon: 'gold', oanda: null, forexcom: null, binance: null, binanceFut: 'XAUUSDT', base: 3550, digits: 2 },
+  { symbol: 'XAGUSDT.P', desc: 'Perak / TetherUS · Perpetual', type: 'perpetual futures', icon: 'silver', oanda: null, forexcom: null, binance: null, binanceFut: 'XAGUSDT', base: 42, digits: 3 },
+  { symbol: 'BTCUSDT.P', desc: 'Bitcoin / TetherUS · Perpetual', type: 'perpetual futures', icon: 'btc', oanda: null, forexcom: null, binance: null, binanceFut: 'BTCUSDT', base: 96000, digits: 1 },
+  { symbol: 'ETHUSDT.P', desc: 'Ethereum / TetherUS · Perpetual', type: 'perpetual futures', icon: 'eth', oanda: null, forexcom: null, binance: null, binanceFut: 'ETHUSDT', base: 3400, digits: 2 },
   // --- Binance (spot) ---
   { symbol: 'BTCUSDT', desc: 'Bitcoin / TetherUS', type: 'spot crypto', icon: 'btc', oanda: null, forexcom: null, binance: 'BTCUSDT', base: 96000, digits: 2 },
   { symbol: 'ETHUSDT', desc: 'Ethereum / TetherUS', type: 'spot crypto', icon: 'eth', oanda: null, forexcom: null, binance: 'ETHUSDT', base: 3400, digits: 2 },

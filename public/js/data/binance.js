@@ -7,10 +7,12 @@ const IV = {
 };
 // data-api.binance.vision khusus data pasar publik; api.binance.com sebagai cadangan
 const HOSTS = ['https://data-api.binance.vision', 'https://api.binance.com'];
+// Binance Futures USDⓈ-M (perpetual: XAUUSDT emas, XAGUSDT perak, forex TradFi, kripto)
+const FUT_HOSTS = ['https://fapi.binance.com'];
 
-async function get(path) {
+async function get(path, hosts = HOSTS) {
   let lastErr;
-  for (const h of HOSTS) {
+  for (const h of hosts) {
     try {
       const r = await fetch(h + path);
       if (r.ok) return await r.json();
@@ -28,14 +30,16 @@ export const binance = {
   bases: Object.keys(IV).map(Number),
   supports: s => s === '1M' || !!IV[s],
   async candles(cfg, sym, tf, count, to) {
-    if (!sym.binance) throw new Error(`${sym.symbol} tidak tersedia di Binance`);
+    const fut = !!sym.binanceFut, code = sym.binanceFut || sym.binance;
+    if (!code) throw new Error(`${sym.symbol} tidak tersedia di Binance`);
     const iv = tf.month ? '1M' : IV[tf.sec];
     if (!iv) throw new Error('Interval tidak didukung Binance');
     const out = [];
     let end = to ? to - 1 : null, remaining = Math.min(count, 5000);
     while (remaining > 0) {
-      const lim = Math.min(1000, remaining);
-      const rows = await get(`/api/v3/klines?symbol=${sym.binance}&interval=${iv}&limit=${lim}${end != null ? `&endTime=${end}` : ''}`);
+      const lim = Math.min(fut ? 1500 : 1000, remaining);
+      const q = `symbol=${code}&interval=${iv}&limit=${lim}${end != null ? `&endTime=${end}` : ''}`;
+      const rows = fut ? await get(`/fapi/v1/klines?${q}`, FUT_HOSTS) : await get(`/api/v3/klines?${q}`);
       const bars = rows.map(k => ({ t: k[0], o: +k[1], h: +k[2], l: +k[3], c: +k[4], v: +k[5] }));
       out.unshift(...bars);
       if (bars.length < lim) break;
@@ -44,3 +48,11 @@ export const binance = {
     return out;
   },
 };
+
+// Simbol Binance yang tidak ada di daftar bawaan: "KODE" = spot, "KODE.P" = futures perpetual
+export function binanceCustom(name) {
+  const n = String(name || '').toUpperCase();
+  if (!/^[A-Z0-9]{4,20}(\.P)?$/.test(n)) return null;
+  const fut = n.endsWith('.P'), code = fut ? n.slice(0, -2) : n;
+  return { symbol: n, desc: `${code} · Binance ${fut ? 'Futures (perpetual)' : 'Spot'}`, type: fut ? 'perpetual crypto' : 'spot crypto', icon: 'crypto', oanda: null, forexcom: null, binance: fut ? null : code, binanceFut: fut ? code : null, base: 1, digits: null, custom: true };
+}

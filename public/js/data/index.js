@@ -5,7 +5,7 @@ import { parseTf, aggregate } from './timeframes.js';
 import { oanda } from './oanda.js';
 import { forexcom } from './forexcom.js';
 import { demo } from './demo.js';
-import { binance } from './binance.js';
+import { binance, binanceCustom } from './binance.js';
 
 export const PROVIDERS = { oanda, forexcom, binance };
 export { SYMBOLS };
@@ -14,7 +14,8 @@ export function listSymbols() {
   const list = [];
   for (const s of SYMBOLS) {
     for (const b of ['oanda', 'forexcom', 'binance']) {
-      if (s[b]) list.push({ symbol: s.symbol, desc: s.desc, type: s.type, icon: s.icon, broker: b, digits: s.digits, code: s[b] });
+      const code = b === 'binance' ? (s.binanceFut ? 'F:' + s.binanceFut : s.binance) : s[b];
+      if (code) list.push({ symbol: s.symbol, desc: s.desc, type: s.type, icon: s.icon, broker: b, digits: s.digits, code });
     }
   }
   return list;
@@ -25,7 +26,7 @@ export function brokerStatus(cfg) {
 }
 
 export async function getCandles(cfg, brokerName, symbol, tf, count, to) {
-  const sym = findSymbol(symbol);
+  const sym = findSymbol(symbol) || (brokerName === 'binance' ? binanceCustom(symbol) : null);
   if (!sym) throw new Error('Simbol tidak ditemukan');
   const target = parseTf(tf);
   if (!target) throw new Error('Interval tidak dikenal');
@@ -56,5 +57,8 @@ export async function getCandles(cfg, brokerName, symbol, tf, count, to) {
   }
   if (to) candles = candles.filter(c => c.t < to);
   candles.sort((a, b) => a.t - b.t);
-  return { broker: brokerName, source: live ? 'live' : 'demo', symbol: sym.symbol, tf, digits: sym.digits, candles };
+  // presisi untuk simbol kustom: dari besaran harga
+  const px = candles.at(-1)?.c;
+  const digits = sym.digits ?? (px == null ? 2 : px >= 1000 ? 2 : px >= 10 ? 3 : px >= 1 ? 4 : px >= 0.01 ? 6 : 8);
+  return { broker: brokerName, source: live ? 'live' : 'demo', symbol: sym.symbol, tf, digits, candles };
 }
