@@ -65,14 +65,16 @@ const parseDate = s => +String(s).match(/-?\d+/)[0]; // "/Date(1700000000000)/"
 export const forexcom = {
   name: 'forexcom',
   configured: cfg => !!(cfg?.username && cfg?.password && cfg?.appKey),
-  async candles(cfg, sym, tfSec, count) {
+  async candles(cfg, sym, tfSec, count, to) {
     if (!sym.forexcom) throw new Error(`${sym.symbol} tidak tersedia di FOREX.com`);
     const iv = INTERVAL[tfSec];
     if (!iv) throw new Error('Timeframe tidak didukung FOREX.com');
     const id = await marketId(cfg, sym);
-    const json = await api(cfg, `/market/${id}/barhistory?interval=${iv[0]}&span=${iv[1]}&PriceBars=${Math.min(count, 4000)}&priceType=MID`);
+    const json = to
+      ? await api(cfg, `/market/${id}/barhistorybefore?interval=${iv[0]}&span=${iv[1]}&maxResults=${Math.min(count, 4000)}&toTimeStampUTC=${Math.floor(to / 1000)}&priceType=MID`)
+      : await api(cfg, `/market/${id}/barhistory?interval=${iv[0]}&span=${iv[1]}&PriceBars=${Math.min(count, 4000)}&priceType=MID`);
     const bars = [...(json.PriceBars || [])];
-    if (json.PartialPriceBar) bars.push(json.PartialPriceBar);
+    if (json.PartialPriceBar && !to) bars.push(json.PartialPriceBar);
     return bars.map(b => ({
       t: parseDate(b.BarDate), o: b.Open, h: b.High, l: b.Low, c: b.Close, v: b.Volume ?? 0,
     }));

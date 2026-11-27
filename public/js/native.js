@@ -8,6 +8,7 @@ const plugin = name => (isNative() && window.Capacitor?.nativePromise
 let notifId = 1;
 
 export async function askNotifyPermission() {
+  bgRequestPermission();
   try {
     const LN = plugin('LocalNotifications');
     if (LN) { await LN.requestPermissions(); return; }
@@ -68,4 +69,16 @@ export async function shareText(text, filename) {
   a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' })); a.download = filename; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   return 'downloaded';
+}
+
+// ---------- Background Runner (peringatan saat aplikasi ditutup) ----------
+const BG_LABEL = 'com.loki4x.lokichart.alerts';
+export async function bgDispatch(event, details = {}) {
+  if (!isNative() || !window.Capacitor?.nativePromise) return null;
+  try { return await window.Capacitor.nativePromise('BackgroundRunner', 'dispatchEvent', { label: BG_LABEL, event, details }); }
+  catch (e) { console.warn('BackgroundRunner', e); return null; }
+}
+export async function bgRequestPermission() {
+  if (!isNative() || !window.Capacitor?.nativePromise) return;
+  try { await window.Capacitor.nativePromise('BackgroundRunner', 'requestPermissions', { apis: ['notifications'] }); } catch { /* */ }
 }

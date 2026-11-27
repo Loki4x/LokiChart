@@ -29,11 +29,11 @@ const cfg = () => ({
 // Cache singkat agar tidak membebani API broker saat polling
 const cache = new Map();
 const CACHE_MS = 1500;
-async function getCandles(broker, symbol, tf, count) {
-  const key = `${broker}|${symbol}|${tf}|${count}`;
+async function getCandles(broker, symbol, tf, count, to) {
+  const key = `${broker}|${symbol}|${tf}|${count}|${to || ''}`;
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < CACHE_MS) return hit.data;
-  const data = await fetchCandles(cfg(), broker, symbol, tf, count);
+  const data = await fetchCandles(cfg(), broker, symbol, tf, count, to);
   cache.set(key, { at: Date.now(), data });
   if (cache.size > 300) cache.delete(cache.keys().next().value);
   return data;
@@ -62,7 +62,8 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.pathname === '/api/candles') {
       const count = Math.max(2, Math.min(5000, +(url.searchParams.get('count') || 500)));
-      const data = await getCandles(url.searchParams.get('broker') || 'oanda', url.searchParams.get('symbol') || '', url.searchParams.get('tf') || '5m', count);
+      const to = +(url.searchParams.get('to') || 0) || undefined;
+      const data = await getCandles(url.searchParams.get('broker') || 'oanda', url.searchParams.get('symbol') || '', url.searchParams.get('tf') || '5m', count, to);
       return send(res, 200, data);
     }
     // File statis

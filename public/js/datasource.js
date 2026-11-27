@@ -25,9 +25,9 @@ export const ds = {
     if (isNative()) { this.mode = 'langsung'; return; }
     try { await api('/api/status'); this.mode = 'server'; } catch { this.mode = 'langsung'; }
   },
-  candles(broker, symbol, tf, count) {
-    if (this.mode === 'server') return api(`/api/candles?symbol=${symbol}&broker=${broker}&tf=${tf}&count=${count}`);
-    return getCandles(loadCreds(), broker, symbol, tf, count).catch(e => {
+  candles(broker, symbol, tf, count, to) {
+    if (this.mode === 'server') return api(`/api/candles?symbol=${symbol}&broker=${broker}&tf=${tf}&count=${count}${to ? `&to=${to}` : ''}`);
+    return getCandles(loadCreds(), broker, symbol, tf, count, to).catch(e => {
       if (e instanceof TypeError && !isNative()) {
         throw new Error('tidak dapat menghubungi broker dari browser (diblokir CORS). Gunakan aplikasi Android atau jalankan server (npm start).');
       }

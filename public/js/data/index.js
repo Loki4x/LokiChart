@@ -12,7 +12,7 @@ export function listSymbols() {
   const list = [];
   for (const s of SYMBOLS) {
     for (const b of ['oanda', 'forexcom']) {
-      if (s[b]) list.push({ symbol: s.symbol, desc: s.desc, type: s.type, icon: s.icon, broker: b, digits: s.digits });
+      if (s[b]) list.push({ symbol: s.symbol, desc: s.desc, type: s.type, icon: s.icon, broker: b, digits: s.digits, code: s[b] });
     }
   }
   return list;
@@ -35,7 +35,7 @@ function aggregate(candles, tfSec) {
   return out;
 }
 
-export async function getCandles(cfg, brokerName, symbol, tf, count) {
+export async function getCandles(cfg, brokerName, symbol, tf, count, to) {
   const sym = findSymbol(symbol);
   if (!sym) throw new Error('Simbol tidak ditemukan');
   const tfSec = TIMEFRAMES[tf];
@@ -48,9 +48,11 @@ export async function getCandles(cfg, brokerName, symbol, tf, count) {
   let candles;
   if (live && tf === '3m') {
     // 3 menit tidak tersedia di semua broker -> agregasi dari 1 menit
-    candles = aggregate(await provider.candles(bcfg, sym, 60, count * 3), 180).slice(-count);
+    candles = aggregate(await provider.candles(bcfg, sym, 60, count * 3, to), 180).slice(-count);
   } else {
-    candles = await provider.candles(bcfg, sym, tfSec, count);
+    candles = await provider.candles(bcfg, sym, tfSec, count, to);
   }
+  if (to) candles = candles.filter(c => c.t < to);
+  candles.sort((a, b) => a.t - b.t);
   return { broker: brokerName, source: live ? 'live' : 'demo', symbol: sym.symbol, tf, digits: sym.digits, candles };
 }

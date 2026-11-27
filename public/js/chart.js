@@ -128,6 +128,7 @@ export class Chart {
 
   // ---------- Data ----------
   setData(candles, { tfMs, digits, keepView = false } = {}) {
+    if (!keepView) { this.noMore = false; this.loadingMore = false; }
     const prevLen = this.candles.length;
     const atEnd = this.scroll >= prevLen - 1;
     this.candles = candles;
@@ -141,6 +142,19 @@ export class Chart {
       this.scroll += candles.length - prevLen;
     }
     this.invalidate();
+  }
+  // tambahkan candle lama di depan (saat chart digeser ke kiri) tanpa menggeser tampilan
+  prependData(older) {
+    this.loadingMore = false;
+    const first = this.candles[0];
+    const add = first ? older.filter(c => c.t < first.t) : older;
+    if (!add.length) { this.noMore = true; this.invalidate(); return 0; }
+    this.candles = add.concat(this.candles);
+    this.scroll += add.length;
+    if (this.drag && this.drag.scroll != null) this.drag.scroll += add.length;
+    this.zoomStack.forEach(z => { z.scroll += add.length; });
+    this.invalidate();
+    return add.length;
   }
   updateLast(bars) {
     // gabungkan bar terbaru (bar terakhir diperbarui / bar baru ditambahkan)
@@ -720,6 +734,9 @@ export class Chart {
     const series = this._series();
     const [from, to] = this.visibleRange();
     const toFar = Math.ceil(this.xi(w)) + 1;
+    if (!this.replay && !this.loadingMore && !this.noMore && this.xi(0) < 300 && this.candles.length < 30000) {
+      this.loadingMore = true; setTimeout(() => this.emit('needmore'));
+    }
 
     // grid + sumbu harga
     const step = niceStep((this.pmax - this.pmin) / Math.max(2, h / 55));
@@ -793,6 +810,29 @@ export class Chart {
       ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); ctx.setLineDash([]);
     }
 
+    // paper trading (replay)
+    if (this.paper) {
+      for (const m of this.paper.marks) {
+        const i = Math.round(this.tToI(m.t)); if (i < from - 1 || i > to + 1) continue;
+        const x = this.ix(i), y = this.py(m.p);
+        if (m.kind === 'in') {
+          ctx.fillStyle = m.dir > 0 ? '#089981' : '#f23645'; ctx.beginPath();
+          if (m.dir > 0) { ctx.moveTo(x, y + 4); ctx.lineTo(x - 6, y + 13); ctx.lineTo(x + 6, y + 13); }
+          else { ctx.moveTo(x, y - 4); ctx.lineTo(x - 6, y - 13); ctx.lineTo(x + 6, y - 13); }
+          ctx.fill();
+        } else { ctx.beginPath(); ctx.arc(x, y, 4.5, 0, Math.PI * 2); ctx.fillStyle = m.win ? '#089981' : '#f23645'; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke(); }
+      }
+      for (const ps of this.paper.positions) {
+        const ln = (pr, col, dash) => { const y = Math.round(this.py(pr)) + 0.5; ctx.strokeStyle = col; ctx.setLineDash(dash); ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); ctx.setLineDash([]); };
+        ln(ps.entry, ps.dir > 0 ? '#2962ff' : '#9c27b0', []);
+        if (ps.sl != null) ln(ps.sl, '#f23645', [6, 4]);
+        if (ps.tp != null) ln(ps.tp, '#089981', [6, 4]);
+        const y = this.py(ps.entry), txt = `${ps.dir > 0 ? 'LONG' : 'SHORT'} ${ps.units}  ${ps.pnl >= 0 ? '+' : ''}${ps.pnl.toFixed(2)}`;
+        ctx.font = 'bold 11px system-ui'; const tw = ctx.measureText(txt).width + 14;
+        ctx.fillStyle = ps.pnl >= 0 ? '#089981' : '#f23645'; roundRect(ctx, 8, y - 10, tw, 20, 4); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(txt, 15, y);
+      }
+    }
     // gambar
     if (!this.hidden) {
       for (const d of this.drawings) if (!d.hidden && this.visibleOnTf(d)) this._drawDrawing(d, d === this.selected);
@@ -873,6 +913,11 @@ export class Chart {
     const showCd = this.cs.countdown && !this.replay && remain > 0 && this.tfMs <= 86400000;
     if (this.cs.lastLabel !== false) this._axisLabel(ly, this.fmt(last.c), lastCol, '#fff', showCd ? fmtCountdown(remain) : null);
     for (const al of this.alerts.filter(a => a.active || !this.cs.alertsActiveOnly)) this._axisLabel(this.py(al.price), '⏰ ' + this.fmt(al.price), al.active ? this.cs.alertColor || '#ff9800' : '#9598a1', '#fff');
+    if (this.paper) for (const ps of this.paper.positions) {
+      this._axisLabel(this.py(ps.entry), this.fmt(ps.entry), ps.dir > 0 ? '#2962ff' : '#9c27b0', '#fff');
+      if (ps.sl != null) this._axisLabel(this.py(ps.sl), 'SL ' + this.fmt(ps.sl), '#f23645', '#fff');
+      if (ps.tp != null) this._axisLabel(this.py(ps.tp), 'TP ' + this.fmt(ps.tp), '#089981', '#fff');
+    }
     if (this.cs.hiLo && this._visHiLo) {
       this._axisLabel(this.py(this._visHiLo.hi), this.fmt(this._visHiLo.hi), '#787b86', '#fff');
       this._axisLabel(this.py(this._visHiLo.lo), this.fmt(this._visHiLo.lo), '#787b86', '#fff');
@@ -901,6 +946,10 @@ export class Chart {
       const sp = this.tsnap || this.tcur, i = Math.round(this.xi(sp.x));
       this._axisLabel(sp.y, this.fmt(this.yp(sp.y)), '#2962ff', '#fff');
       this._timeLabel(this.ix(i), this._ft(this.iToT(i)), '#2962ff');
+    }
+    if (this.loadingMore && this.xi(0) < 30) {
+      ctx.fillStyle = th.axisText; ctx.font = '11px system-ui'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.fillText('Memuat riwayat…', 10, h - 12);
     }
     if (this.replay) {
       ctx.fillStyle = 'rgba(41,98,255,.9)'; ctx.font = 'bold 11px system-ui'; ctx.textAlign = 'right';

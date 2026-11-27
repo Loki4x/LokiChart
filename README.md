@@ -84,8 +84,12 @@ Jika kredensial belum diisi, aplikasi memakai **data demo sintetis** (badge oran
 - **Legenda indikator (kiri atas):** ketuk nama indikator → bingkai dengan tombol 👁 sembunyikan, ⚙ pengaturan (tab **Input / Corak / Visibilitas**, tombol **Bawaan**: reset / simpan sebagai bawaan), 🗑 hapus, ⋯ (duplikat, urutan, sembunyikan/tampilkan/hapus semua). Indikator tersembunyi tampil pudar dengan ikon mata dicoret; tombol ^ melipat daftar.
 - **Indikator, metrik dan strategi:** Favorit, Template indikator, kategori Tren/Osilator/Volume/Volatilitas — 16 indikator yang bisa diatur:
   Volume, SMA, EMA, WMA, Bollinger Bands, VWAP, Ichimoku, Supertrend, Pivot Points, **Struktur Pasar & Order Block** (HH/HL/LH/LL, BOS, CHoCH), RSI, MACD, Stochastic, ATR, CCI, OBV, ADX/DMI
-- **Peringatan:** panel Daftar & Log; harga (melintasi / ke atas / ke bawah / di atas / di bawah) **dan peringatan pada garis gambar** (garis tren, sinar, garis horizontal, dll.); sekali atau berulang; notifikasi + bunyi + getar. Diperiksa selama aplikasi terbuka.
+- **Peringatan:** panel Daftar & Log; harga (melintasi / ke atas / ke bawah / di atas / di bawah) **dan peringatan pada garis gambar** (garis tren, sinar, garis horizontal, dll.); sekali atau berulang; notifikasi + bunyi + getar.
+  - Saat aplikasi terbuka: diperiksa setiap 2 detik.
+  - **Saat aplikasi ditutup (Android):** diperiksa di latar belakang kira-kira setiap 15 menit (batas minimum Android) memakai candle 1 menit sejak pemeriksaan terakhir, jadi persilangan di antara dua pemeriksaan tetap tertangkap. Butuh akun broker terisi (data demo tidak diperiksa). Beberapa merek HP membatasi aplikasi latar belakang — bila notifikasi tidak muncul, matikan *optimasi baterai* untuk LokiChart.
 - **Replay bar:** saat memilih titik awal, bar setelahnya tampak pudar; putar/jeda, maju per bar, kecepatan 1x–25x
+- **Paper trading di Replay:** tombol **Jual/Beli** dengan uang virtual (saldo awal bisa diatur), jumlah unit, Stop loss & Take profit (dicek memakai high/low tiap bar), posisi tampil di chart dengan P/L, tutup manual/semua, statistik (winrate, P/L bersih, profit factor, terbaik/terburuk) dan riwayat sesi
+- **Riwayat panjang:** saat chart digeser ke kiri, candle lama dimuat otomatis
 - **Pusat analisis:** setup/simpan/buka layout, buat baru, pengaturan chart, detail simbol, teknikal
 - **Jelajahi:** kenaikan & penurunan terbesar, paling volatil, peta panas (per broker & kategori)
 - **Menu:** akun broker, tema, layar tetap menyala, **cadangkan & pulihkan data**, bilah alat gambar di kiri (opsional), notifikasi, hapus data, versi aplikasi

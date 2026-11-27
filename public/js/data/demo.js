@@ -30,10 +30,11 @@ function priceAt(tSec, base, seed) {
 export const demo = {
   name: 'demo',
   configured: () => true,
-  async candles(cfg, sym, tfSec, count) {
+  async candles(cfg, sym, tfSec, count, to) {
     const seed = seedOf(sym.symbol);
     const now = Math.floor(Date.now() / 1000);
-    const lastOpen = Math.floor(now / tfSec) * tfSec;
+    // 'to' (ms): ambil candle yang dimulai sebelum waktu ini (untuk memuat riwayat lama)
+    const lastOpen = to ? Math.floor((to / 1000 - 1) / tfSec) * tfSec : Math.floor(now / tfSec) * tfSec;
     const out = [];
     const samples = 16;
     for (let k = count - 1; k >= 0; k--) {

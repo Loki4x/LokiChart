@@ -16,11 +16,12 @@
   "license": "MIT",
   "devDependencies": {
     "@capacitor/android": "^8.3.0",
+    "@capacitor/assets": "^3.0.5",
     "@capacitor/cli": "^8.3.0",
-    "@capacitor/core": "^8.3.0",
-    "@capacitor/assets": "^3.0.5"
+    "@capacitor/core": "^8.3.0"
   },
   "dependencies": {
+    "@capacitor/background-runner": "^3.0.0",
     "@capacitor/filesystem": "^8.0.0",
     "@capacitor/local-notifications": "^8.0.0",
     "@capacitor/share": "^8.0.0"

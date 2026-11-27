@@ -2,12 +2,13 @@ import { Chart, THEMES, DEFAULT_CS } from './chart.js';
 import { TOOLS, CATEGORIES, UTILITIES } from './tools.js';
 import { INDICATORS, defaultParams, indicatorLabel, technicalRating } from './indicators.js';
 import { ds, isNative, loadCreds, saveCreds } from './datasource.js';
-import { notify, askNotifyPermission, shareImage } from './native.js';
+import { notify, askNotifyPermission, shareImage, bgDispatch } from './native.js';
 import { Overview, drawGauge } from './overview.js';
 import { Explore, MenuPage } from './pages.js';
 import { initDrawUI } from './drawui.js';
 import { initSettings } from './settings.js';
 import { initStudyUI } from './studyui.js';
+import { initPaper } from './paper.js';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -141,7 +142,8 @@ class Pane {
     c.on('drawstep', st => { if (this.idx === state.active) renderStep(st); });
     c.on('alertmove', al => { const a = alerts.find(x => x.id === al.id); if (a) { a.price = al.price; a.active = true; saveAlerts(); toast(`Peringatan dipindah ke ${c.fmt(al.price)}`); } });
     c.on('alertclick', al => editAlert(alerts.find(x => x.id === al.id)));
-    c.on('replay', () => { if (this.idx === state.active) renderReplayBar(); });
+    c.on('replay', r => { if (this.idx === state.active) { if (r) paper.onBar(); renderReplayBar(); } });
+    c.on('needmore', () => this.loadMore());
   }
   get cfg() { return state.panes[this.idx]; }
   destroy() { clearInterval(this.timer); this.el.remove(); }
@@ -165,6 +167,18 @@ class Pane {
     } catch (e) {
       c.loadingText = 'Gagal memuat data'; c.invalidate();
       toast('Gagal memuat data: ' + e.message, 5000);
+    }
+  }
+  async loadMore() {
+    const seq = this.seq, cfg = this.cfg, c = this.chart, first = c.candles[0];
+    if (!first) { c.loadingMore = false; return; }
+    try {
+      const d = await ds.candles(cfg.broker, cfg.symbol, cfg.tf, 1500, first.t);
+      if (seq !== this.seq) return;
+      c.prependData(d.candles);
+    } catch (e) {
+      c.loadingMore = false; c.noMore = true;
+      toast('Gagal memuat riwayat: ' + e.message, 4000);
     }
   }
   async poll() {
@@ -775,6 +789,8 @@ document.addEventListener('pointerdown', e => {
 }, true);
 
 // ---------- Pengaturan chart (dialog bermenu kiri; juga dibuka dengan ketuk 2x pada chart) ----------
+const paper = initPaper({ chart, cfg: () => act().cfg, state, save, toast, onChange: () => renderReplayBar(), openForm: (...a) => { formCancel = null; openForm(...a); }, fmt: v => chart().fmt(v) });
+$('#closePaper').onclick = () => $('#paperPanel').classList.add('hidden');
 const studyUI = initStudyUI({ pane: act, state, save, toast, popMenu, uid });
 const chartSettings = initSettings({
   state, save, toast,
@@ -795,7 +811,40 @@ const lastSeen = new Map();
 function saveAlerts() {
   localStorage.setItem('ac:alerts', JSON.stringify(alerts)); localStorage.setItem('ac:alertlog', JSON.stringify(alertLog.slice(0, 200)));
   syncAlerts(); if (!$('#alertPanel').classList.contains('hidden')) renderAlerts();
+  bgSync();
 }
+// Kirim peringatan aktif + kredensial ke pemeriksa latar belakang Android (setiap ~15 menit saat aplikasi ditutup)
+function bgSync() {
+  if (!isNative()) return;
+  const payload = alerts.filter(a => a.active).map(a => {
+    const info = symInfo(a.symbol, a.broker), o = { id: a.id, symbol: a.symbol, broker: a.broker, code: info?.code, cond: a.cond, price: a.price, repeat: !!a.repeat, msg: a.msg || '', active: true, digits: info?.digits ?? 2 };
+    if (a.drawId) {
+      const d = JSON.parse(localStorage.getItem(`ac:drawings:${a.symbol}`) || '[]').find(x => x.id === a.drawId);
+      if (!d) return null;
+      const [p0, p1] = d.points;
+      o.line = { t0: p0.t, p0: p0.p, slope: p1 && p1.t !== p0.t && !['hline', 'hray', 'pricelabel'].includes(d.tool) ? (p1.p - p0.p) / (p1.t - p0.t) : 0 };
+      o.label = a.drawName || 'garis';
+    }
+    return o;
+  }).filter(Boolean);
+  const last = {};
+  for (const [k, p] of lastSeen) last[k] = { t: Date.now(), p };
+  bgDispatch('sync', { alerts: payload, creds: loadCreds(), last });
+}
+// Ambil peringatan yang terpicu di latar belakang saat aplikasi dibuka lagi
+async function bgPull() {
+  const r = await bgDispatch('pull');
+  const tr = r?.triggered || [];
+  if (!tr.length) return;
+  for (const t of tr) {
+    const a = alerts.find(x => x.id === t.id);
+    if (a && !a.repeat) { a.active = false; a.triggeredAt = t.at; }
+    alertLog.unshift({ t: t.at, msg: t.msg + ' (latar belakang)', symbol: t.symbol, broker: t.broker });
+  }
+  saveAlerts();
+  toast(`${tr.length} peringatan terpicu saat aplikasi ditutup — lihat Peringatan › Log`, 6000);
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden) bgSync(); else bgPull(); });
 function syncAlerts() {
   for (const p of panes) { p.chart.alerts = alerts.filter(a => !a.drawId && a.symbol === p.cfg.symbol && a.broker === p.cfg.broker); p.chart.invalidate(); }
 }
@@ -898,7 +947,7 @@ function replayToggle() {
   toast('Replay: ketuk bar tempat replay dimulai', 3000);
   renderReplayBar();
 }
-function stopReplay() { clearInterval(replayTimer); replayTimer = null; const c = chart(); c.stopReplay(); if (c.tool === 'replay') c.setTool(null); renderReplayBar(); }
+function stopReplay() { clearInterval(replayTimer); replayTimer = null; const c = chart(); if (c.replay) paper.endSession(); c.stopReplay(); if (c.tool === 'replay') c.setTool(null); renderReplayBar(); }
 function renderReplayBar() {
   const c = chart(), bar = $('#replayBar'), on = !!(c?.replay || c?.tool === 'replay');
   bar.classList.toggle('hidden', !on); $('#bottombar').classList.toggle('hidden', on);
@@ -911,13 +960,18 @@ function renderReplayBar() {
     <button class="icon-btn" data-r="play" title="${replayTimer ? 'Jeda' : 'Putar'}">${icon(replayTimer ? IC.pause : IC.play)}</button>
     <button class="icon-btn" data-r="step" title="Maju 1 bar">${icon(IC.step)}</button>
     <select data-r="speed">${[1, 2, 3, 5, 10, 25].map(s => `<option value="${s}" ${s === replaySpeed ? 'selected' : ''}>${s}x</option>`).join('')}</select>
-    <span class="lbl">${TF_SHORT[cfg.tf]} · ${left} bar tersisa</span><span class="spacer"></span>
+    <span class="lbl">${TF_SHORT[cfg.tf]} · ${left} bar</span><span class="spacer"></span>
+    ${paper.summaryChip()}
+    <button class="pp-sell sm" data-r="sell">Jual</button><button class="pp-buy sm" data-r="buy">Beli</button>
     <button class="icon-btn" data-r="exit" title="Keluar replay">${icon(IC.close)}</button>`;
 }
 $('#replayBar').onclick = e => {
+  if (e.target.closest('[data-p=panel]')) return paper.open();
   const r = e.target.closest('[data-r]')?.dataset.r; if (!r || r === 'speed') return;
   const c = chart();
   if (r === 'exit') return stopReplay();
+  if (r === 'buy') return paper.order(1);
+  if (r === 'sell') return paper.order(-1);
   if (r === 'pick') { clearInterval(replayTimer); replayTimer = null; c.setTool('replay'); toast('Ketuk bar tempat replay dimulai'); return renderReplayBar(); }
   if (r === 'step') { c.replayStep(1); return renderReplayBar(); }
   if (r === 'play') {
@@ -1121,7 +1175,7 @@ $('#saveSet').onclick = async () => {
     try { await ds.candles(b, 'EURUSD', '1h', 2); out.push(`${BROKERS[b]}: ✓ terhubung`); } catch (e) { out.push(`${BROKERS[b]}: ✗ ${e.message}`); }
   }
   $('#setStatus').textContent = out.join('\n');
-  panes.forEach(p => p.load()); refreshQuotes(); menuPage.render();
+  panes.forEach(p => p.load()); refreshQuotes(); menuPage.render(); bgSync();
 };
 
 // =====================================================================
@@ -1157,5 +1211,6 @@ const menuPage = new MenuPage($('#menuBody'), {
   if (state.keepAwake) menuPage.setKeepAwake(true);
   refreshQuotes();
   setInterval(refreshQuotes, 15000);
+  bgPull(); bgSync();
   window.lc = { get panes() { return panes; }, chart, state, act }; // untuk debugging dari konsol
 })();

@@ -6,6 +6,16 @@
     "allowMixedContent": false
   },
   "plugins": {
-    "CapacitorHttp": { "enabled": true }
+    "CapacitorHttp": {
+      "enabled": true
+    },
+    "BackgroundRunner": {
+      "label": "com.loki4x.lokichart.alerts",
+      "src": "runners/background.js",
+      "event": "checkAlerts",
+      "repeat": true,
+      "interval": 15,
+      "autoStart": true
+    }
   }
 }

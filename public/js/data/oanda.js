@@ -14,12 +14,13 @@ function baseUrl(cfg) {
 export const oanda = {
   name: 'oanda',
   configured: cfg => !!cfg?.apiKey,
-  async candles(cfg, sym, tfSec, count) {
+  async candles(cfg, sym, tfSec, count, to) {
     if (!sym.oanda) throw new Error(`${sym.symbol} tidak tersedia di OANDA`);
     const gran = GRAN[tfSec];
     if (!gran) throw new Error('Timeframe tidak didukung OANDA');
     const url = `${baseUrl(cfg)}/v3/instruments/${encodeURIComponent(sym.oanda)}/candles` +
-      `?granularity=${gran}&count=${Math.min(count, 5000)}&price=M&alignmentTimezone=UTC&dailyAlignment=0&weeklyAlignment=Monday`;
+      `?granularity=${gran}&count=${Math.min(count, 5000)}&price=M&alignmentTimezone=UTC&dailyAlignment=0&weeklyAlignment=Monday` +
+      (to ? `&to=${Math.floor(to / 1000)}` : '');
     const res = await fetch(url, {
       headers: {
         Authorization: `Bearer ${cfg.apiKey}`,
