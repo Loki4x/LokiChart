@@ -1246,16 +1246,19 @@ export class Chart {
     const full = this.replay ? this.replay.full : this.candles;
     this.replay = { full, idx: i };
     this.candles = full.slice(0, i + 1);
-    this.scroll = i + this.rightMargin; this.autoScale = true;
+    // tampilan tidak dipindah: garis potong tetap di posisi layar yang sama
     this.emit('replay', this.replay); this.invalidate();
   }
   replayStep(n = 1) {
     const r = this.replay; if (!r) return false;
     if (r.idx >= r.full.length - 1) return false;
     r.idx = Math.min(r.full.length - 1, r.idx + n);
-    const atEnd = this.scroll >= this.candles.length - 1;
     this.candles = r.full.slice(0, r.idx + 1);
-    if (atEnd) this.scroll = r.idx + this.rightMargin;
+    // bawaan: tampilan diam. Opsi 'ikuti': geser hanya bila candle terbaru keluar dari tepi kanan (dan tidak sedang digeser jari)
+    if (this.replayFollow && !this.drag) {
+      const right = this.xi(this.plot.w) - 1;
+      if (r.idx > right) this.scroll += r.idx - right;
+    }
     this.emit('replay', r); this.invalidate();
     return true;
   }

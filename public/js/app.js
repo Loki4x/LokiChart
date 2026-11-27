@@ -113,7 +113,7 @@ class Pane {
     this.chart = new Chart(this.el.querySelector('.chart'));
     const c = this.chart;
     applyChartLook(c);
-    Object.assign(c, { magnet: state.magnet, styleDefaults: state.styleDefaults, extraDefaults: state.extraDefaults, stay: G.stay, hidden: G.hidden, lockAll: G.lockAll, hideStudies: G.hideStudies, angleSnap: !!state.angleSnap, legendCollapsed: !!state.legendCollapsed });
+    Object.assign(c, { magnet: state.magnet, styleDefaults: state.styleDefaults, extraDefaults: state.extraDefaults, stay: G.stay, hidden: G.hidden, lockAll: G.lockAll, hideStudies: G.hideStudies, angleSnap: !!state.angleSnap, legendCollapsed: !!state.legendCollapsed, replayFollow: !!state.replayFollow });
     this.el.addEventListener('pointerdown', () => setActive(this.idx), true);
     this.el.querySelector('.go-latest').onclick = () => c.goLatest();
     this.legend.addEventListener('click', e => { const t = e.target.closest('.t'); if (t) { setActive(this.idx); symbolMenu(this, t); } });
@@ -1032,7 +1032,8 @@ function replayBarAction(e) {
     { key: 'units', label: 'Jumlah per order (unit)', type: 'number', value: paper.units(), min: 0.0001, max: 1e9, step: 'any' },
     { key: 'start', label: 'Saldo awal paper trading', type: 'number', value: state.paperStart || 10000, min: 1, max: 1e12 },
     { key: 'panel', label: 'Tampilkan panel trading (Jual / Beli)', type: 'bool', value: state.tradePanel !== false },
-  ], v => { replaySpeed = +v.speed; state.paperUnits = v.units; state.paperStart = v.start; state.tradePanel = v.panel; save(); setPlaying(!!replayTimer); });
+    { key: 'follow', label: 'Geser otomatis mengikuti candle (saat candle keluar dari tepi kanan)', type: 'bool', value: !!state.replayFollow },
+  ], v => { replaySpeed = +v.speed; state.paperUnits = v.units; state.paperStart = v.start; state.tradePanel = v.panel; state.replayFollow = v.follow; for (const x of allCharts()) x.replayFollow = v.follow; save(); setPlaying(!!replayTimer); });
 }
 // ganti interval saat replay: lanjutkan dari waktu yang sama
 async function replayChangeTf(tf) {
