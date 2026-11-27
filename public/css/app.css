@@ -390,3 +390,11 @@ body:not(.replaying) #tradePanel { display: none; }
 .tf-h { margin: 18px 0 6px; font-size: 19px; }
 .tf-sec { font-size: 13px; color: var(--muted); margin: 12px 0 8px; letter-spacing: .03em; }
 #tfPanel .primary.block { margin: 16px 0 6px; padding: 14px; }
+/* roda interval favorit */
+#tfBtn { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; line-height: 1.05; padding: 0 10px; height: 44px; overflow: hidden; user-select: none; -webkit-user-select: none; }
+#tfBtn .w-cur { font-size: 15px; }
+#tfBtn .w-side { font-size: 11px; color: var(--muted); opacity: .55; }
+#tfWheel { position: absolute; left: 50%; top: 45%; transform: translate(-50%, -50%); z-index: 40; background: var(--panel); border-radius: 12px; box-shadow: var(--shadow); padding: 10px 26px; min-width: 150px; pointer-events: none; }
+#tfWheel .tw-i { padding: 3px 0; font-size: 15px; white-space: nowrap; }
+#tfWheel .d0 { font-weight: 700; font-size: 17px; }
+#tfWheel .d1 { opacity: .85; } #tfWheel .d2 { opacity: .45; } #tfWheel .d3 { opacity: .15; }

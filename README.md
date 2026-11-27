@@ -77,6 +77,7 @@ Jika kredensial belum diisi, aplikasi memakai **data demo sintetis** (badge oran
 
 - **Navigasi seperti aplikasi charting mobile:** Daftar Pantau · Chart · Jelajahi · Menu
 - **Daftar Pantau:** harga & perubahan, ikhtisar simbol (grafik 1H–Seluruh, perubahan hari ini & sepanjang data, poin data penting, rentang 52 minggu, **musiman**, meter **Teknikal** Jual kuat–Beli kuat), tombol *Buka chart*
+- **Roda interval favorit:** geser jari ke atas/bawah pada interval di kiri bawah untuk berpindah antar interval favorit (berputar); daftar muncul di tengah chart dan chart langsung berganti
 - **Panel Interval** (ketuk interval di kiri bawah): Rentang tanggal (1D, 5H, 1Bln, 3Bln, 6Bln, YTD, 1T, 5T, Semua), Favorit (tekan lama interval → ★), Detik, Menit, Jam, Hari, dan *Tambah interval khusus*
 - **Chart:** candle / candle kosong / Heikin Ashi / bar / garis / area; toolbar bawah (simbol, interval, Gambar, Indikator, Layout, Peringatan, Jenis chart, Replay, Pohon objek, Pusat analisis, Undo/Redo, Layar penuh, Bagikan)
 - **Pengaturan chart/simbol:** warna badan/batas/sumbu naik-turun, warnai berdasarkan penutupan sebelumnya, latar, grid, garis harga, hitung mundur, legenda OHLC (ketuk nama simbol di chart)

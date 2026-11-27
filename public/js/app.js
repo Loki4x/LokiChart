@@ -266,12 +266,59 @@ $('#srcBadge').onclick = () => openBroker();
 function renderHeader() {
   const cfg = act().cfg;
   $('#symName').textContent = cfg.symbol;
-  $('#tfBtn').textContent = TF_SHORT[cfg.tf];
+  renderTfWheelBtn();
   document.title = `${cfg.symbol} · ${BROKERS[cfg.broker]} — LokiChart`;
   renderWatchlist();
 }
 $('#symbolBtn').onclick = openSearch;
-$('#tfBtn').onclick = () => { togglePanel('tfPanel'); renderTfPanel(); };
+// ---------- Roda interval favorit (geser atas/bawah pada interval di kiri bawah) ----------
+const wheelList = () => { const cur = act().cfg.tf; const l = [...state.tfFav]; if (!l.includes(cur)) l.push(cur); return l.sort((a, b) => tfMs(a) - tfMs(b)); };
+const wrapIdx = (i, n) => ((i % n) + n) % n;
+function renderTfWheelBtn(sel) {
+  const l = wheelList(), cur = sel ?? act().cfg.tf, i = l.indexOf(cur), n = l.length;
+  $('#tfBtn').innerHTML = n > 1
+    ? `<span class="w-side">${l[wrapIdx(i - 1, n)]}</span><span class="w-cur">${cur}</span><span class="w-side">${l[wrapIdx(i + 1, n)]}</span>`
+    : `<span class="w-cur">${cur}</span>`;
+}
+function showTfWheel(sel) {
+  const l = wheelList(), n = l.length, i = l.indexOf(sel), el = $('#tfWheel');
+  const rows = [];
+  for (let d = -3; d <= 3; d++) { const tf = l[wrapIdx(i + d, n)]; rows.push(`<div class="tw-i d${Math.abs(d)}">${tfName(tf)}</div>`); }
+  el.innerHTML = rows.join(''); el.classList.remove('hidden');
+}
+let tfApplyTimer = null;
+function applyWheelTf(tf, now) {
+  clearTimeout(tfApplyTimer);
+  const go = () => { if (act().cfg.tf === tf) return; if (chart().replay || chart().tool === 'replay') replayChangeTf(tf); else setTf(tf); };
+  if (now) go(); else tfApplyTimer = setTimeout(go, 350);
+}
+(() => {
+  const btn = $('#tfBtn'); let st = null;
+  btn.style.touchAction = 'none';
+  btn.addEventListener('pointerdown', e => {
+    const l = wheelList();
+    st = { y: e.clientY, i: l.indexOf(act().cfg.tf), l, moved: false, sel: act().cfg.tf };
+    btn.setPointerCapture?.(e.pointerId);
+  });
+  btn.addEventListener('pointermove', e => {
+    if (!st) return;
+    const dy = e.clientY - st.y;
+    if (!st.moved && Math.abs(dy) < 8) return;
+    st.moved = true;
+    const sel = st.l[wrapIdx(st.i + Math.round(-dy / 22), st.l.length)];   // geser ke atas = interval berikutnya
+    if (sel !== st.sel) { st.sel = sel; try { navigator.vibrate?.(8); } catch { /* */ } applyWheelTf(sel); }
+    renderTfWheelBtn(sel); showTfWheel(sel);
+  });
+  const end = () => {
+    if (!st) return;
+    const s0 = st; st = null;
+    if (!s0.moved) { togglePanel('tfPanel'); renderTfPanel(); return; }
+    applyWheelTf(s0.sel, true);
+    setTimeout(() => $('#tfWheel').classList.add('hidden'), 450);
+  };
+  btn.addEventListener('pointerup', end);
+  btn.addEventListener('pointercancel', () => { st = null; $('#tfWheel').classList.add('hidden'); renderTfWheelBtn(); });
+})();
 
 // ---------- Panel Interval & Rentang tanggal ----------
 const RANGES = [['1D', '1D', '1m', 1], ['5H', '5H', '5m', 5], ['1Bln', '1Bln', '30m', 31], ['3Bln', '3Bln', '1h', 92], ['6Bln', '6Bln', '2h', 183], ['YTD', 'YTD', '1D', 'ytd'], ['1T', '1T', '1D', 365], ['5T', '5T', '1W', 1826], ['ALL', 'Semua', '1M', 'all']];
