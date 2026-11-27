@@ -98,8 +98,10 @@ export class Chart {
   resize() {
     const r = this.el.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
+    const cw = Math.round(r.width * dpr), ch = Math.round(r.height * dpr);
+    if (cw === this.canvas.width && ch === this.canvas.height && this.dpr === dpr && this.W === r.width && this.H === r.height) return;
     this.W = r.width; this.H = r.height; this.dpr = dpr;
-    this.canvas.width = Math.round(r.width * dpr); this.canvas.height = Math.round(r.height * dpr);
+    this.canvas.width = cw; this.canvas.height = ch;
     this.canvas.style.width = r.width + 'px'; this.canvas.style.height = r.height + 'px';
     this.invalidate();
   }
@@ -376,6 +378,11 @@ export class Chart {
     this._angleHint = { x: nx, y: ny, deg };
     return { t: this.iToT(this.xi(nx)), p: this.yp(ny) };
   }
+  _scissorsPos() {
+    const i = this.replaySel, k = this.candles[i];
+    if (i == null || !k) return null;
+    return { x: Math.round(this.ix(i) + this.spacing / 2) + 0.5, y: Math.min(this.plot.h - 40, Math.max(20, this.py(k.c))) };
+  }
   _setReplaySel(x) {
     this.replaySel = Math.max(10, Math.min(this.candles.length - 2, Math.round(this.xi(x))));
     this.emit('replaysel', this.replaySel); this.invalidate();
@@ -517,6 +524,8 @@ export class Chart {
       this.emit('study', { id: lh.id, rect: lh }); return;
     }
     if (this.tool === 'replay' && x < this.plot.w) {
+      const sc = this._scissorsPos();
+      if (sc && Math.hypot(x - sc.x, y - sc.y) <= (touch ? 26 : 16)) { this.drag = { type: 'cut' }; return; }
       this.drag = { type: 'replaysel' };
       this._setReplaySel(x);
       return;
@@ -674,6 +683,7 @@ export class Chart {
     clearTimeout(this._lp);
     const up = this._pos(e);
     if (dr.type === 'cross') { this.invalidate(); return; }
+    if (dr.type === 'cut') { this.emit('replaycut', this.replaySel); return; }
     if (dr.type === 'tcur') { if (!dr.moved) this._tapPlace(); this.invalidate(); return; }
     // ketuk 2x (sentuh)
     if (isTouch(e) && ((dr.type === 'pan' && !dr.moved) || (dr.type === 'move' && !dr.moved))) {
@@ -858,10 +868,12 @@ export class Chart {
     if (this.tool === 'replay' && this.replaySel != null) {
       const i = this.replaySel, x = Math.round(this.ix(i) + this.spacing / 2) + 0.5, k = this.candles[i];
       ctx.strokeStyle = '#2962ff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
-      if (k) { // ikon gunting di harga penutupan bar
-        const y = this.py(k.c);
-        ctx.fillStyle = this.theme.text; ctx.font = '16px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText('✂', x, y);
+      const sc = this._scissorsPos();
+      if (sc) { // ikon gunting (ketuk untuk memotong chart & mulai replay)
+        ctx.beginPath(); ctx.arc(sc.x, sc.y, 15, 0, Math.PI * 2);
+        ctx.fillStyle = '#2962ff'; ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.font = '17px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('✂', sc.x, sc.y + 1);
       }
       ctx.beginPath(); ctx.arc(x, h - 12, 8, 0, Math.PI * 2); ctx.fillStyle = this.cs.bg || this.theme.bg; ctx.fill();
       ctx.strokeStyle = '#2962ff'; ctx.lineWidth = 1.5; ctx.stroke();

@@ -143,7 +143,7 @@ class Pane {
     c.on('alertmove', al => { const a = alerts.find(x => x.id === al.id); if (a) { a.price = al.price; a.active = true; saveAlerts(); toast(`Peringatan dipindah ke ${c.fmt(al.price)}`); } });
     c.on('alertclick', al => editAlert(alerts.find(x => x.id === al.id)));
     c.on('replay', r => { if (this.idx === state.active) { if (r) paper.onBar(); renderReplayBar(); } });
-    c.on('replaysel', () => { if (this.idx === state.active) renderReplayBar(); });
+    c.on('replaycut', () => { if (this.idx === state.active) startFromSelection(); });
     c.on('needmore', () => this.loadMore());
   }
   get cfg() { return state.panes[this.idx]; }
@@ -948,7 +948,7 @@ function replayToggle() {
   c.replaySel = null;
   c.setTool('replay');
   document.body.classList.add('replaying');
-  toast('Geser garis biru ke bar awal, lalu tekan ▶', 3000);
+  toast('Geser garis biru ke bar awal, lalu ketuk ✂ atau ▶', 3000);
   renderReplayBar();
 }
 function stopReplay() {
@@ -983,7 +983,7 @@ function renderReplayBar() {
   $('#tradePanel').classList.toggle('hidden', !on || state.tradePanel === false);
   $('#tradePanel').classList.toggle('off', !c?.replay);
   $('#tradePanel .tp-qty').textContent = String(paper.units()).replace('.', ',');
-  requestAnimationFrame(() => panes.forEach(p => p.chart.resize()));
+  if (on !== renderReplayBar.lastOn) { renderReplayBar.lastOn = on; requestAnimationFrame(() => panes.forEach(p => p.chart.resize())); }
   if (!on) { clearInterval(replayTimer); replayTimer = null; return; }
   const cfg = act().cfg, playing = !!replayTimer;
   const btn = (r, ic, title, { act: a = false, dis = false } = {}) => `<button class="icon-btn ${a ? 'on' : ''}" data-r="${r}" title="${title}" ${dis ? 'disabled' : ''}>${icon(ic)}</button>`;
@@ -1009,7 +1009,7 @@ $('#replayBar').onclick = e => {
     const idx = c.replay ? c.replay.idx : null;
     if (c.replay) { paper.endSession(); c.stopReplay(true); }
     c.replaySel = idx; c.setTool('replay');
-    toast('Geser garis biru ke bar awal, lalu tekan ▶', 2500);
+    toast('Geser garis biru ke bar awal, lalu ketuk ✂ atau ▶', 2500);
     return renderReplayBar();
   }
   if (r === 'play') { if (c.tool === 'replay') return startFromSelection(); return setPlaying(!replayTimer); }
