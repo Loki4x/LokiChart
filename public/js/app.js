@@ -998,7 +998,18 @@ function renderReplayBar() {
     ${btn('set', 'M12 2L20.7 7V17L12 22L3.3 17V7Z M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0', 'Pengaturan replay')}
     ${btn('exit', IC.close, 'Tutup replay')}`;
 }
-$('#replayBar').onclick = e => {
+// Ketukan andal: aksi dijalankan saat jari dilepas di tombol yang sama (tidak bergantung pada event klik)
+function onTap(root, sel, handler) {
+  let down = null;
+  root.addEventListener('pointerdown', e => { down = e.target.closest(sel); });
+  root.addEventListener('pointerup', e => {
+    const b = e.target.closest(sel);
+    if (b && b === down) { down = null; handler({ target: e.target, currentTarget: root }); }
+  });
+  root.addEventListener('pointercancel', () => { down = null; });
+}
+onTap($('#replayBar'), '[data-r], [data-p]', e => replayBarAction(e));
+function replayBarAction(e) {
   if (e.target.closest('[data-p=panel]')) return paper.open();
   const b = e.target.closest('[data-r]'); if (!b || b.disabled) return;
   const r = b.dataset.r, c = chart();
@@ -1022,7 +1033,7 @@ $('#replayBar').onclick = e => {
     { key: 'start', label: 'Saldo awal paper trading', type: 'number', value: state.paperStart || 10000, min: 1, max: 1e12 },
     { key: 'panel', label: 'Tampilkan panel trading (Jual / Beli)', type: 'bool', value: state.tradePanel !== false },
   ], v => { replaySpeed = +v.speed; state.paperUnits = v.units; state.paperStart = v.start; state.tradePanel = v.panel; save(); setPlaying(!!replayTimer); });
-};
+}
 // ganti interval saat replay: lanjutkan dari waktu yang sama
 async function replayChangeTf(tf) {
   const c = chart(), p = act(), wasSel = c.tool === 'replay';
@@ -1037,7 +1048,7 @@ async function replayChangeTf(tf) {
   renderReplayBar();
 }
 // panel trading mengambang (Jual · jumlah · Beli · Ratakan)
-$('#tradePanel').addEventListener('click', e => {
+onTap($('#tradePanel'), '[data-t]', e => {
   const t = e.target.closest('[data-t]')?.dataset.t; if (!t) return;
   if (t === 'qty') return paper.setUnits();
   if (!chart().replay) return toast('Mulai replay dulu (tekan ▶)', 1500);
