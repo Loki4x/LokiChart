@@ -46,13 +46,17 @@ const defStudies = () => [{ id: uid(), type: 'volume', params: defaultParams('vo
 const state = {
   layout: '1', active: 0, theme: 'light', page: 'chart',
   panes: [{ symbol: 'XAUUSD', broker: 'oanda', tf: '5m', chartType: 'candles', studies: defStudies() }],
-  favorites: ['trendline', 'vline', 'fibret', 'fibcircles', 'gannbox', 'gannfan'],
+  favorites: [],
   watchlist: [['XAUUSD', 'oanda'], ['XAUUSD', 'forexcom'], ['BTCUSD', 'oanda'], ['NAS100', 'forexcom'], ['GBPJPY', 'oanda'], ['AUDUSD', 'oanda'], ['EURUSD', 'oanda'], ['USDJPY', 'forexcom'], ['US30', 'oanda'], ['USDIDR', 'forexcom']],
   magnet: 'off', panelTab: 'tren', styleDefaults: {}, extraDefaults: {}, templates: {}, recent: [],
   sync: { symbol: false, interval: false, crosshair: true, time: false }, cs: {}, indFav: [], indTemplates: [], layouts: [], rail: false, keepAwake: false,
   ...saved,
 };
 if (state.layout === '3') state.layout = '3l';
+if (!state.favMigrated) {
+  if (JSON.stringify(state.favorites) === JSON.stringify(['trendline', 'vline', 'fibret', 'fibcircles', 'gannbox', 'gannfan'])) state.favorites = [];
+  state.favMigrated = true;
+}
 if (saved.symbol) { state.panes[0] = { ...state.panes[0], symbol: saved.symbol, broker: saved.broker || 'oanda', tf: saved.tf || '5m' }; }
 ['symbol', 'broker', 'tf', 'chartType', 'indicators', 'ovOpen'].forEach(k => delete state[k]);
 const save = () => localStorage.setItem('ac:state', JSON.stringify(state));
@@ -480,12 +484,29 @@ function renderToolGrid() {
       return t.cat === state.panelTab;
     });
     html = ids.map(id => `<div class="tile ${c.tool === id ? 'on' : ''}" data-tool="${id}">
-        <button class="star ${state.favorites.includes(id) ? 'fav' : ''}" data-star="${id}" title="Favorit">★</button>
+        ${state.favorites.includes(id) ? '<span class="star fav" title="Favorit">★</span>' : ''}
         ${icon(TOOLS[id].icon)}<span>${TOOLS[id].name}</span></div>`).join('') ||
-      `<div class="empty">${state.panelTab === 'favorit' ? 'Belum ada favorit. Ketuk ★ pada alat untuk menambahkannya.' : 'Tidak ada alat yang cocok.'}</div>`;
+      `<div class="empty">${state.panelTab === 'favorit' ? 'Belum ada favorit. Tekan lama (atau klik kanan) sebuah alat lalu pilih “Tambahkan ke favorit”.' : 'Tidak ada alat yang cocok.'}</div>`;
   }
   $('#toolGrid').innerHTML = html;
 }
+// Favorit: tekan lama (sentuh) atau klik kanan pada alat
+let favPressed = false, favTimer = null;
+function favMenu(tile) {
+  const id = tile.dataset.tool, on = state.favorites.includes(id);
+  popMenu(tile, `<div class="mh">${TOOLS[id].name}</div><button class="mi" data-v="fav">${on ? '☆ Hapus dari favorit' : '★ Tambahkan ke favorit'}</button>`, () => {
+    state.favorites = on ? state.favorites.filter(x => x !== id) : [...state.favorites, id];
+    save(); renderToolGrid();
+    toast(on ? `${TOOLS[id].name} dihapus dari Favorit` : `${TOOLS[id].name} ditambahkan ke Favorit`);
+  });
+}
+$('#toolGrid').addEventListener('pointerdown', e => {
+  const t = e.target.closest('.tile[data-tool]'); if (!t || e.button === 2) return;
+  clearTimeout(favTimer);
+  favTimer = setTimeout(() => { favPressed = true; try { navigator.vibrate?.(15); } catch { /* */ } favMenu(t); }, 500);
+});
+for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) $('#toolGrid').addEventListener(ev, () => clearTimeout(favTimer));
+$('#toolGrid').addEventListener('contextmenu', e => { const t = e.target.closest('.tile[data-tool]'); if (!t) return; e.preventDefault(); favMenu(t); });
 $('#toolGrid').onclick = e => {
   const more = e.target.closest('[data-more]');
   if (more) {
@@ -493,12 +514,7 @@ $('#toolGrid').onclick = e => {
     const cur = { hide: G.hidden ? 'hide' : '', magnet: 'magnet-' + state.magnet, clear: '' }[more.dataset.more];
     return popMenu(more, SUBMENU[more.dataset.more].map(([v, n]) => `<button class="mi ${v === cur ? 'on' : ''}" data-v="${v}">${n}</button>`).join(''), v => runUtility(v));
   }
-  const star = e.target.closest('[data-star]');
-  if (star) {
-    const id = star.dataset.star;
-    state.favorites = state.favorites.includes(id) ? state.favorites.filter(x => x !== id) : [...state.favorites, id];
-    save(); renderToolGrid(); return;
-  }
+  if (favPressed) { favPressed = false; return; }
   const t = e.target.closest('.tile'); if (!t) return;
   if (t.dataset.util) return runUtility(t.dataset.util);
   if (t.dataset.tool) {

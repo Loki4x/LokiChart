@@ -102,7 +102,7 @@ Jika kredensial belum diisi, aplikasi memakai **data demo sintetis** (badge oran
 - **Kuas:** Kuas, Stabilo
 - **Teks dan Catatan:** Teks, Catatan, Label Harga, Catatan Harga, Bendera, Penanda, Komentar, Penanda Panah Naik/Turun
 - **Bentuk:** Persegi Panjang, Persegi Diputar, Lingkaran, Elips, Segitiga, Busur, Kurva, Kurva Ganda, Jalur, Polyline, Panah
-- Favorit (★), pencarian alat, bar gaya untuk gambar terpilih (warna, ketebalan, gaya garis, perpanjang, kunci, duplikat, hapus)
+- **Favorit:** kosong secara bawaan; tekan lama (atau klik kanan) sebuah alat → *Tambahkan ke favorit*. Hanya alat favorit yang bertanda ★. Pencarian alat, bar gaya untuk gambar terpilih (warna, ketebalan, gaya garis, perpanjang, kunci, duplikat, hapus)
 
 ### Cara menggambar
 
