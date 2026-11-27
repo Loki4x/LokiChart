@@ -665,10 +665,14 @@ $('#toolGrid').onclick = e => {
   }
   if (favPressed) { favPressed = false; return; }
   const t = e.target.closest('.tile'); if (!t) return;
-  if (t.dataset.util) return runUtility(t.dataset.util);
+  if (t.dataset.util) {
+    runUtility(t.dataset.util);
+    if (['measure', 'eraser', 'zoomin'].includes(t.dataset.util) && chart().tool) togglePanel('drawPanel', false);
+    return;
+  }
   if (t.dataset.tool) {
     selectTool(chart().tool === t.dataset.tool ? null : t.dataset.tool);
-    if (window.innerWidth < 820 && chart().tool) togglePanel('drawPanel', false);
+    if (chart().tool) togglePanel('drawPanel', false); // panel ditutup setelah alat dipilih
   }
 };
 
