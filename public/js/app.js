@@ -15,7 +15,7 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const uid = () => Math.random().toString(36).slice(2, 10);
 const icon = d => `<svg class="i" viewBox="0 0 24 24"><path d="${d}"/></svg>`;
-const BROKERS = { oanda: 'OANDA', forexcom: 'FOREX.com' };
+const BROKERS = { oanda: 'OANDA', forexcom: 'FOREX.com', binance: 'Binance' };
 // interval: lihat data/timeframes.js (label = kode interval, mis. 45m, 4h, 1D, 1M)
 const TF_SHORT = new Proxy({}, { get: (_, k) => String(k) });
 const TFS = () => [...new Set([...state.tfFav, ...ALL_TFS, ...state.customTfs])].map(v => [v, tfName(v)]);
@@ -76,7 +76,7 @@ function toast(msg, ms = 2200) {
 const fmtP = (v, dg) => v == null || !isFinite(v) ? '—' : Number(v).toLocaleString('id-ID', { minimumFractionDigits: dg, maximumFractionDigits: dg });
 function symIconHtml(s) {
   const info = symInfo(s) || { icon: 'fx' };
-  const map = { gold: ['#d4a017', 'Au'], silver: ['#9e9e9e', 'Ag'], btc: ['#f7931a', '₿'], eth: ['#627eea', 'Ξ'], index: ['#2962ff', '▲'], oil: ['#37474f', '◆'], usd: ['#1b5e20', '$'] };
+  const map = { gold: ['#d4a017', 'Au'], silver: ['#9e9e9e', 'Ag'], btc: ['#f7931a', '₿'], eth: ['#627eea', 'Ξ'], index: ['#2962ff', '▲'], oil: ['#37474f', '◆'], usd: ['#1b5e20', '$'], crypto: ['#f0b90b', s.replace(/USDT$|BTC$/, '').slice(0, 2)] };
   const [bg, ch] = map[info.icon] || ['#3f51b5', ({ EUR: '€', GBP: '£', USD: '$', AUD: 'A$', NZD: 'N$', JPY: '¥', CAD: 'C$', CHF: '₣' })[s.slice(0, 3)] || s[0]];
   return `<span class="sym-icon" style="background:${bg}">${ch}</span>`;
 }
@@ -243,11 +243,16 @@ function setActive(k) {
 function remember(cfg) {
   state.recent = [{ symbol: cfg.symbol, broker: cfg.broker, tf: cfg.tf }, ...state.recent.filter(r => !(r.symbol === cfg.symbol && r.broker === cfg.broker))].slice(0, 12);
 }
-function loadActive() { remember(act().cfg); save(); renderHeader(); act().load(); }
-function setSymbol(symbol, broker, tf) {
+function loadActive(keepRecent) {
+  const c = act().cfg;
+  if (keepRecent) { const r = state.recent.find(x => x.symbol === c.symbol && x.broker === c.broker); if (r) r.tf = c.tf; else remember(c); }
+  else remember(c);
+  save(); renderHeader(); act().load();
+}
+function setSymbol(symbol, broker, tf, opts = {}) {
   const targets = state.sync.symbol ? panes : [act()];
   for (const p of targets) { p.cfg.symbol = symbol; p.cfg.broker = broker; if (tf && p === act()) p.cfg.tf = tf; if (p !== act()) p.load(); }
-  loadActive();
+  loadActive(opts.keepRecent);
 }
 function setTf(tf) {
   const targets = state.sync.interval ? panes : [act()];
@@ -265,60 +270,69 @@ function setSource(src) {
 $('#srcBadge').onclick = () => openBroker();
 function renderHeader() {
   const cfg = act().cfg;
-  $('#symName').textContent = cfg.symbol;
+  symWheel?.render();
   renderTfWheelBtn();
   document.title = `${cfg.symbol} · ${BROKERS[cfg.broker]} — LokiChart`;
   renderWatchlist();
 }
-$('#symbolBtn').onclick = openSearch;
-// ---------- Roda interval favorit (geser atas/bawah pada interval di kiri bawah) ----------
-const wheelList = () => { const cur = act().cfg.tf; const l = [...state.tfFav]; if (!l.includes(cur)) l.push(cur); return l.sort((a, b) => tfMs(a) - tfMs(b)); };
+// ---------- Roda (geser atas/bawah) untuk interval favorit & simbol terakhir di kiri bawah ----------
 const wrapIdx = (i, n) => ((i % n) + n) % n;
-function renderTfWheelBtn(sel) {
-  const l = wheelList(), cur = sel ?? act().cfg.tf, i = l.indexOf(cur), n = l.length;
-  $('#tfBtn').innerHTML = n > 1
-    ? `<span class="w-side">${l[wrapIdx(i - 1, n)]}</span><span class="w-cur">${cur}</span><span class="w-side">${l[wrapIdx(i + 1, n)]}</span>`
-    : `<span class="w-cur">${cur}</span>`;
-}
-function showTfWheel(sel) {
-  const l = wheelList(), n = l.length, i = l.indexOf(sel), el = $('#tfWheel');
-  const rows = [];
-  for (let d = -3; d <= 3; d++) { const tf = l[wrapIdx(i + d, n)]; rows.push(`<div class="tw-i d${Math.abs(d)}">${tfName(tf)}</div>`); }
-  el.innerHTML = rows.join(''); el.classList.remove('hidden');
-}
-let tfApplyTimer = null;
-function applyWheelTf(tf, now) {
-  clearTimeout(tfApplyTimer);
-  const go = () => { if (act().cfg.tf === tf) return; if (chart().replay || chart().tool === 'replay') replayChangeTf(tf); else setTf(tf); };
-  if (now) go(); else tfApplyTimer = setTimeout(go, 350);
-}
-(() => {
-  const btn = $('#tfBtn'); let st = null;
+function makeWheel({ btn, list, current, same, short, long, apply, tap }) {
+  // list(): daftar item; current(): item aktif; short/long: label tombol & label roda
+  let st = null, timer = null;
+  const idxOf = (l, x) => Math.max(0, l.findIndex(y => same(y, x)));
+  const render = sel => {
+    const l = list(), cur = sel ?? current(), n = l.length, i = idxOf(l, cur);
+    btn.innerHTML = n > 1 ? `<span class="w-side">${short(l[wrapIdx(i - 1, n)])}</span><span class="w-cur">${short(cur)}</span><span class="w-side">${short(l[wrapIdx(i + 1, n)])}</span>` : `<span class="w-cur">${short(cur)}</span>`;
+  };
+  const show = sel => {
+    const l = list(), n = l.length, i = idxOf(l, sel), rows = [];
+    const k = Math.min(3, Math.floor((n - 1) / 2));
+    for (let d = -k; d <= k; d++) rows.push(`<div class="tw-i d${Math.abs(d)}">${long(l[wrapIdx(i + d, n)])}</div>`);
+    $('#tfWheel').innerHTML = rows.join(''); $('#tfWheel').classList.remove('hidden');
+  };
+  const go = (x, now) => { clearTimeout(timer); const f = () => { if (!same(x, current())) apply(x); }; if (now) f(); else timer = setTimeout(f, 350); };
   btn.style.touchAction = 'none';
-  btn.addEventListener('pointerdown', e => {
-    const l = wheelList();
-    st = { y: e.clientY, i: l.indexOf(act().cfg.tf), l, moved: false, sel: act().cfg.tf };
-    btn.setPointerCapture?.(e.pointerId);
-  });
+  btn.addEventListener('pointerdown', e => { const l = list(); st = { y: e.clientY, l, i: idxOf(l, current()), sel: current(), moved: false }; btn.setPointerCapture?.(e.pointerId); });
   btn.addEventListener('pointermove', e => {
     if (!st) return;
     const dy = e.clientY - st.y;
     if (!st.moved && Math.abs(dy) < 8) return;
     st.moved = true;
-    const sel = st.l[wrapIdx(st.i + Math.round(-dy / 22), st.l.length)];   // geser ke atas = interval berikutnya
-    if (sel !== st.sel) { st.sel = sel; try { navigator.vibrate?.(8); } catch { /* */ } applyWheelTf(sel); }
-    renderTfWheelBtn(sel); showTfWheel(sel);
+    if (st.l.length < 2) return;
+    const sel = st.l[wrapIdx(st.i + Math.round(-dy / 22), st.l.length)]; // geser ke atas = item berikutnya
+    if (!same(sel, st.sel)) { st.sel = sel; try { navigator.vibrate?.(8); } catch { /* */ } go(sel); }
+    render(sel); show(sel);
   });
-  const end = () => {
+  btn.addEventListener('pointerup', () => {
     if (!st) return;
     const s0 = st; st = null;
-    if (!s0.moved) { togglePanel('tfPanel'); renderTfPanel(); return; }
-    applyWheelTf(s0.sel, true);
+    if (!s0.moved) return setTimeout(tap, 60); // tunggu klik bawaan sentuhan lewat dulu
+    go(s0.sel, true);
     setTimeout(() => $('#tfWheel').classList.add('hidden'), 450);
-  };
-  btn.addEventListener('pointerup', end);
-  btn.addEventListener('pointercancel', () => { st = null; $('#tfWheel').classList.add('hidden'); renderTfWheelBtn(); });
-})();
+  });
+  btn.addEventListener('pointercancel', () => { st = null; $('#tfWheel').classList.add('hidden'); render(); });
+  return { render };
+}
+// interval favorit
+const tfWheel = makeWheel({
+  btn: $('#tfBtn'),
+  list: () => { const cur = act().cfg.tf, l = [...state.tfFav]; if (!l.includes(cur)) l.push(cur); return l.sort((a, b) => tfMs(a) - tfMs(b)); },
+  current: () => act().cfg.tf, same: (a, b) => a === b, short: x => x, long: x => tfName(x),
+  apply: tf => { if (chart().replay || chart().tool === 'replay') replayChangeTf(tf); else setTf(tf); },
+  tap: () => { togglePanel('tfPanel'); renderTfPanel(); },
+});
+function renderTfWheelBtn() { tfWheel.render(); }
+// simbol terakhir (urutan tidak berubah saat berpindah lewat roda)
+const symWheel = makeWheel({
+  btn: $('#symbolBtn'),
+  list: () => { const c = act().cfg, l = [...state.recent]; if (!l.some(r => r.symbol === c.symbol && r.broker === c.broker)) l.unshift({ symbol: c.symbol, broker: c.broker, tf: c.tf }); return l; },
+  current: () => ({ symbol: act().cfg.symbol, broker: act().cfg.broker, tf: act().cfg.tf }),
+  same: (a, b) => a.symbol === b.symbol && a.broker === b.broker,
+  short: x => `${x.symbol}`, long: x => `${x.symbol} <small>${BROKERS[x.broker]} · ${x.tf}</small>`,
+  apply: x => setSymbol(x.symbol, x.broker, x.tf, { keepRecent: true }),
+  tap: () => openSearch(),
+});
 
 // ---------- Panel Interval & Rentang tanggal ----------
 const RANGES = [['1D', '1D', '1m', 1], ['5H', '5H', '5m', 5], ['1Bln', '1Bln', '30m', 31], ['3Bln', '3Bln', '1h', 92], ['6Bln', '6Bln', '2h', 183], ['YTD', 'YTD', '1D', 'ytd'], ['1T', '1T', '1D', 365], ['5T', '5T', '1W', 1826], ['ALL', 'Semua', '1M', 'all']];
@@ -1307,7 +1321,7 @@ $('#wlAdd').onclick = $('#wlAdd2').onclick = $('#wlSearch').onclick = () => open
 // =====================================================================
 // Pencarian simbol
 // =====================================================================
-const SYM_TABS = [['all', 'Seluruh'], ['forex', 'Forex'], ['commodity', 'Komoditas'], ['crypto', 'Kripto'], ['index', 'Indeks'], ['oanda', 'OANDA'], ['forexcom', 'FOREX.com']];
+const SYM_TABS = [['all', 'Seluruh'], ['forex', 'Forex'], ['commodity', 'Komoditas'], ['crypto', 'Kripto'], ['index', 'Indeks'], ['oanda', 'OANDA'], ['forexcom', 'FOREX.com'], ['binance', 'Binance']];
 let symTab = 'all';
 function openSearch() { $('#searchModal').classList.remove('hidden'); $('#symSearch').value = ''; renderSymList(); setTimeout(() => $('#symSearch').focus(), 50); }
 function renderSymList() {
@@ -1320,7 +1334,7 @@ function renderSymList() {
       <button class="add" data-add="1" title="${inWl ? 'Hapus dari' : 'Tambah ke'} daftar pantau">${inWl ? '✓' : '+'}</button></div>`;
   };
   const list = SYMBOLS.filter(s => {
-    if (symTab === 'oanda' || symTab === 'forexcom') { if (s.broker !== symTab) return false; }
+    if (BROKERS[symTab]) { if (s.broker !== symTab) return false; }
     else if (symTab !== 'all' && !s.type.includes(symTab)) return false;
     return !q || s.symbol.includes(q) || s.desc.toUpperCase().includes(q);
   });
@@ -1364,8 +1378,9 @@ $('#saveSet').onclick = async () => {
   saveCreds({ oanda: { apiKey: g('oandaKey'), env: g('oandaEnv') }, forexcom: { username: g('fxUser'), password: $('#fxPass').value, appKey: g('fxKey'), baseUrl: g('fxUrl'), marketIds: g('fxIds') } });
   $('#setStatus').textContent = 'Menguji koneksi…';
   const out = [];
-  for (const b of ['oanda', 'forexcom']) {
+  for (const b of ['oanda', 'forexcom', 'binance']) {
     const st = (await ds.status())[b];
+    if (b === 'binance') { try { await ds.candles('binance', 'BTCUSDT', '1h', 2); out.push('Binance: ✓ terhubung (data publik, tanpa akun)'); } catch (e) { out.push('Binance: ✗ ' + e.message); } continue; }
     if (st !== 'live') { out.push(`${BROKERS[b]}: demo (belum diisi)`); continue; }
     try { await ds.candles(b, 'EURUSD', '1h', 2); out.push(`${BROKERS[b]}: ✓ terhubung`); } catch (e) { out.push(`${BROKERS[b]}: ✗ ${e.message}`); }
   }

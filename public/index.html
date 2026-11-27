@@ -93,7 +93,7 @@
         <div id="replayBar" class="hidden"></div>
         <footer id="bottombar">
           <div class="bb-sym">
-            <button id="symbolBtn" title="Ganti simbol"><b id="symName">XAUUSD</b></button>
+            <button id="symbolBtn" title="Ketuk: cari simbol · Geser atas/bawah: simbol terakhir"><span class="w-cur">XAUUSD</span></button>
             <button id="tfBtn" title="Ganti timeframe">5m</button>
           </div>
           <div class="bb-draw">
@@ -126,7 +126,7 @@
 
       <!-- ================= JELAJAHI ================= -->
       <section id="pg-explore" class="page">
-        <header class="pg-head"><h1>Jelajahi</h1><span class="spacer"></span><select id="exBroker"><option value="oanda">OANDA</option><option value="forexcom">FOREX.com</option></select></header>
+        <header class="pg-head"><h1>Jelajahi</h1><span class="spacer"></span><select id="exBroker"><option value="oanda">OANDA</option><option value="forexcom">FOREX.com</option><option value="binance">Binance</option></select></header>
         <div id="exploreBody" class="pg-body"></div>
       </section>
 
@@ -210,6 +210,8 @@
       <label>AppKey<input id="fxKey" type="password" autocomplete="off" /></label>
       <label>Base URL API (opsional)<input id="fxUrl" placeholder="https://ciapi.cityindex.com/TradingAPI" autocomplete="off" /></label>
       <label>MarketId manual (opsional, JSON)<input id="fxIds" placeholder='{"XAUUSD":401153869}' autocomplete="off" /></label>
+      <h3>Binance</h3>
+      <p class="note">Data kripto Binance bersifat publik — tidak perlu akun atau API key.</p>
       <button id="saveSet" class="primary">Simpan &amp; uji koneksi</button>
       <pre id="setStatus"></pre>
     </div>

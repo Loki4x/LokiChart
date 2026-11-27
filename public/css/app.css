@@ -398,3 +398,7 @@ body:not(.replaying) #tradePanel { display: none; }
 #tfWheel .tw-i { padding: 3px 0; font-size: 15px; white-space: nowrap; }
 #tfWheel .d0 { font-weight: 700; font-size: 17px; }
 #tfWheel .d1 { opacity: .85; } #tfWheel .d2 { opacity: .45; } #tfWheel .d3 { opacity: .15; }
+#symbolBtn { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; line-height: 1.05; padding: 0 10px; height: 44px; overflow: hidden; user-select: none; -webkit-user-select: none; }
+#symbolBtn .w-cur { font-size: 15px; font-weight: 700; }
+#symbolBtn .w-side { font-size: 11px; color: var(--muted); opacity: .55; }
+#tfWheel .tw-i small { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 6px; }

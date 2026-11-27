@@ -37,6 +37,16 @@ async function oandaBars(cr, code, fromMs) {
   const j = await r.json();
   return (j.candles || []).map(c => ({ t: Math.round(parseFloat(c.time) * 1000), o: +c.mid.o, h: +c.mid.h, l: +c.mid.l, c: +c.mid.c }));
 }
+async function binanceBars(code, fromMs) {
+  const start = Math.max(fromMs, Date.now() - 16 * 3600e3);
+  let r = null;
+  for (const h of ['https://data-api.binance.vision', 'https://api.binance.com']) {
+    try { r = await fetch(`${h}/api/v3/klines?symbol=${code}&interval=1m&startTime=${start}&limit=1000`); if (r.ok) break; } catch (e) { r = null; }
+  }
+  if (!r || !r.ok) throw new Error('Binance tidak dapat dihubungi');
+  const j = await r.json();
+  return j.map(k => ({ t: k[0], o: +k[1], h: +k[2], l: +k[3], c: +k[4] }));
+}
 async function forexcomBars(cr, d, code, fromMs) {
   const base = (cr.baseUrl || 'https://ciapi.cityindex.com/TradingAPI').replace(/\/$/, '');
   if (!d.fxSession) {
@@ -74,10 +84,10 @@ addEventListener('checkAlerts', async (resolve, reject) => {
     let nid = Math.floor(Date.now() / 1000) % 1000000;
     for (const key of Object.keys(groups)) {
       const list = groups[key], a0 = list[0], cr = (d.creds || {})[a0.broker];
-      if (!cr) continue;
+      if (!cr && a0.broker !== 'binance') continue;
       const since = (d.last[key] && d.last[key].t) || Date.now() - 20 * 60000;
       let bars;
-      try { bars = a0.broker === 'oanda' ? await oandaBars(cr, a0.code, since) : await forexcomBars(cr, d, a0.code, since); } catch (e) { continue; }
+      try { bars = a0.broker === 'binance' ? await binanceBars(a0.code, since) : a0.broker === 'oanda' ? await oandaBars(cr, a0.code, since) : await forexcomBars(cr, d, a0.code, since); } catch (e) { continue; }
       if (!bars.length) continue;
       const hi = Math.max(...bars.map(b => b.h)), lo = Math.min(...bars.map(b => b.l)), lastBar = bars[bars.length - 1];
       const prev = d.last[key] && d.last[key].p != null ? d.last[key].p : bars[0].o;

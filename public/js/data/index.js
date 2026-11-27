@@ -5,14 +5,15 @@ import { parseTf, aggregate } from './timeframes.js';
 import { oanda } from './oanda.js';
 import { forexcom } from './forexcom.js';
 import { demo } from './demo.js';
+import { binance } from './binance.js';
 
-export const PROVIDERS = { oanda, forexcom };
+export const PROVIDERS = { oanda, forexcom, binance };
 export { SYMBOLS };
 
 export function listSymbols() {
   const list = [];
   for (const s of SYMBOLS) {
-    for (const b of ['oanda', 'forexcom']) {
+    for (const b of ['oanda', 'forexcom', 'binance']) {
       if (s[b]) list.push({ symbol: s.symbol, desc: s.desc, type: s.type, icon: s.icon, broker: b, digits: s.digits, code: s[b] });
     }
   }
@@ -48,7 +49,7 @@ export async function getCandles(cfg, brokerName, symbol, tf, count, to) {
     // pakai interval dasar terbesar yang didukung dan membagi habis interval target
     const bases = (provider.bases || []).filter(b => b < target.sec && target.sec % b === 0);
     const base = Math.max(...bases);
-    if (!isFinite(base)) throw new Error(`Interval ${tf} tidak tersedia di ${brokerName === 'oanda' ? 'OANDA' : 'FOREX.com'}`);
+    if (!isFinite(base)) throw new Error(`Interval ${tf} tidak tersedia di ${{ oanda: 'OANDA', forexcom: 'FOREX.com', binance: 'Binance' }[brokerName]}`);
     const k = target.sec / base;
     const raw = await provider.candles(bcfg, sym, { sec: base, unit: 's', n: base }, Math.min(5000, count * k + k), to);
     candles = aggregate(raw, target).slice(-count);
