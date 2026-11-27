@@ -106,7 +106,7 @@ export class Chart {
   get plot() { return { w: this.W - AXIS_W, h: this.layout().mainH }; }
   get timeY() { return this.H - TIME_H; }
   layout() {
-    const subs = this.hideStudies ? [] : this.studies.filter(s => !s.hidden && INDICATORS[s.type]?.pane === 'sub');
+    const subs = this.hideStudies ? [] : this.studies.filter(s => !s.hidden && INDICATORS[s.type]?.pane === 'sub' && this.visibleOnTf(s));
     const avail = this.H - TIME_H;
     const ph = subs.length ? Math.max(60, Math.min(avail * 0.24, (avail * 0.55) / subs.length)) : 0;
     const mainH = Math.max(80, avail - ph * subs.length);
@@ -115,15 +115,16 @@ export class Chart {
   studyResult(st) {
     const c = this.candles, last = c[c.length - 1];
     if (!last) return null;
-    const key = `${st.type}|${JSON.stringify(st.params)}|${c.length}|${c[0].t}|${last.t}|${last.c}|${last.h}|${last.l}|${this.tfMs}`;
+    const key = `${st.type}|${JSON.stringify(st.params)}|${st.lw || ''}|${c.length}|${c[0].t}|${last.t}|${last.c}|${last.h}|${last.l}|${this.tfMs}`;
     const hit = this._cache.get(st.id);
     if (hit && hit.key === key) return hit.r;
     let r = null;
     try { r = INDICATORS[st.type].calc(c, st.params, { tfMs: this.tfMs }); } catch (e) { console.warn(e); }
+    if (r && st.lw) for (const ln of r.lines || []) ln.width = st.lw * (ln.width && ln.width < 1.5 ? 0.75 : 1);
     this._cache.set(st.id, { key, r });
     return r;
   }
-  _mainStudies() { return this.hideStudies ? [] : this.studies.filter(s => !s.hidden && INDICATORS[s.type]?.pane === 'main'); }
+  _mainStudies() { return this.hideStudies ? [] : this.studies.filter(s => !s.hidden && INDICATORS[s.type]?.pane === 'main' && this.visibleOnTf(s)); }
 
   // ---------- Data ----------
   setData(candles, { tfMs, digits, keepView = false } = {}) {
@@ -492,7 +493,10 @@ export class Chart {
       return;
     }
     const lh = (this._legendHits || []).find(r => x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1);
-    if (lh && !this.tool) { this.emit('study', lh.id); return; }
+    if (lh && !this.tool) {
+      if (lh.id === '__collapse') { this.legendCollapsed = !this.legendCollapsed; this.emit('legendcollapse', this.legendCollapsed); this.invalidate(); return; }
+      this.emit('study', { id: lh.id, rect: lh }); return;
+    }
     if (y >= this.timeY) { this.drag = { type: 'time', x, spacing: this.spacing }; return; }
     if (y > this.plot.h) { this.drag = { type: 'pan', x, y, scroll: this.scroll, pmin: this.pmin, pmax: this.pmax, auto: true }; return; }
     if (x > this.plot.w) { this.drag = { type: 'price', y, pmin: this.pmin, pmax: this.pmax }; this.autoScale = false; return; }
@@ -828,7 +832,14 @@ export class Chart {
 
     // legenda indikator utama
     let ly0 = this.legendTop || 34;
-    for (const st of mainSt) { this._legend(st, 10, ly0, this.studyResult(st)); ly0 += 18; }
+    const listed = this.hideStudies ? [] : this.studies.filter(s => INDICATORS[s.type] && (INDICATORS[s.type].pane === 'main' || s.hidden || !this.visibleOnTf(s)));
+    if (this.studies.length && !this.legendCollapsed) {
+      for (const st of listed) {
+        const off = st.hidden || !this.visibleOnTf(st);
+        this._legend(st, 10, ly0, off ? null : this.studyResult(st), off); ly0 += 20;
+      }
+    }
+    if (this.studies.length) this._collapseBtn(10, ly0 + 2);
 
     // pane indikator
     for (const pn of L.panes) this._drawPane(pn, from, toFar, tLabels);
@@ -963,8 +974,30 @@ export class Chart {
     }
   }
 
-  _legend(st, x, y, r) {
+  _collapseBtn(x, y) {
+    const { ctx } = this, th = this.theme;
+    ctx.strokeStyle = th.grid === '#f0f3fa' ? '#d1d4dc' : '#434651'; ctx.lineWidth = 1; ctx.fillStyle = this.cs.bg || th.bg;
+    roundRect(ctx, x - 4, y, 26, 22, 4); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = th.axisText; ctx.lineWidth = 1.6; ctx.beginPath();
+    const cx = x + 9, cy = y + 11, d = this.legendCollapsed ? 1 : -1;
+    ctx.moveTo(cx - 5, cy - 2.5 * d); ctx.lineTo(cx, cy + 2.5 * d); ctx.lineTo(cx + 5, cy - 2.5 * d); ctx.stroke();
+    if (this.legendCollapsed) { ctx.fillStyle = th.axisText; ctx.font = '11px system-ui'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(`${this.studies.length} indikator`, x + 28, cy); }
+    this._legendHits.push({ x0: x - 4, x1: x + (this.legendCollapsed ? 100 : 22), y0: y, y1: y + 22, id: '__collapse' });
+  }
+  _legend(st, x, y, r, off = false) {
     const { ctx } = this, cs = this.cs;
+    if (off) {
+      ctx.font = '11px system-ui'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      const name = cs.studyInputs === false ? INDICATORS[st.type].short : indicatorLabel(st);
+      ctx.fillStyle = 'rgba(149,152,161,.75)'; ctx.fillText(name, x, y);
+      const w = ctx.measureText(name).width;
+      // ikon mata dicoret
+      const ex = x + w + 14; ctx.strokeStyle = 'rgba(149,152,161,.9)'; ctx.lineWidth = 1.3;
+      ctx.beginPath(); ctx.ellipse(ex, y, 6, 3.6, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(ex - 6, y + 5); ctx.lineTo(ex + 6, y - 5); ctx.stroke();
+      this._legendHits.push({ x0: x - 4, x1: ex + 10, y0: y - 10, y1: y + 10, id: st.id });
+      return;
+    }
     const def = INDICATORS[st.type];
     const i = this.cursor && this.cursor.x < this.plot.w ? Math.round(this.xi(this.cursor.x)) : this.candles.length - 1;
     ctx.font = '11px system-ui'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
@@ -979,7 +1012,7 @@ export class Chart {
     if (cs.legendBg) { ctx.fillStyle = this.theme === THEMES.dark ? 'rgba(19,23,34,.75)' : 'rgba(255,255,255,.8)'; roundRect(ctx, x - 4, y - 9, wTot + 2, 18, 4); ctx.fill(); }
     let xx = x;
     for (const [t, c] of parts) { ctx.fillStyle = c; ctx.fillText(t, xx, y); xx += ctx.measureText(t).width + 8; }
-    this._legendHits.push({ x0: x - 4, x1: xx, y0: y - 9, y1: y + 9, id: st.id });
+    this._legendHits.push({ x0: x - 4, x1: xx, y0: y - 10, y1: y + 10, id: st.id });
   }
 
   _drawPane(pn, from, to, tLabels) {

@@ -7,6 +7,7 @@ import { Overview, drawGauge } from './overview.js';
 import { Explore, MenuPage } from './pages.js';
 import { initDrawUI } from './drawui.js';
 import { initSettings } from './settings.js';
+import { initStudyUI } from './studyui.js';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -106,7 +107,7 @@ class Pane {
     this.chart = new Chart(this.el.querySelector('.chart'));
     const c = this.chart;
     applyChartLook(c);
-    Object.assign(c, { magnet: state.magnet, styleDefaults: state.styleDefaults, extraDefaults: state.extraDefaults, stay: G.stay, hidden: G.hidden, lockAll: G.lockAll, hideStudies: G.hideStudies, angleSnap: !!state.angleSnap });
+    Object.assign(c, { magnet: state.magnet, styleDefaults: state.styleDefaults, extraDefaults: state.extraDefaults, stay: G.stay, hidden: G.hidden, lockAll: G.lockAll, hideStudies: G.hideStudies, angleSnap: !!state.angleSnap, legendCollapsed: !!state.legendCollapsed });
     this.el.addEventListener('pointerdown', () => setActive(this.idx), true);
     this.el.querySelector('.go-latest').onclick = () => c.goLatest();
     this.legend.addEventListener('click', e => { if (e.target.closest('.t')) openChartSettings(); });
@@ -128,7 +129,8 @@ class Pane {
       for (const p of panes) if (p !== this && p.cfg.symbol === this.cfg.symbol) p.chart.setDrawings(JSON.parse(JSON.stringify(list)));
       if (!$('#treePanel').classList.contains('hidden')) renderTree();
     });
-    c.on('study', id => openStudySettings(this, id));
+    c.on('study', ({ id, rect }) => { setActive(this.idx); studyUI.show(this, id, rect); });
+    c.on('legendcollapse', v => { state.legendCollapsed = v; save(); for (const p of panes) { p.chart.legendCollapsed = v; p.chart.invalidate(); } });
     c.on('dbltap', () => { setActive(this.idx); openChartSettings(); });
     c.on('dbldraw', d => { setActive(this.idx); c.selected = d; onSelect(d); c.invalidate(); drawUI.openSettings(d); });
     c.on('drawstep', st => { if (this.idx === state.active) renderStep(st); });
@@ -632,7 +634,7 @@ $('#indList').onclick = e => {
   const tpl = e.target.closest('[data-tpl]');
   if (tpl) { cfg.studies = state.indTemplates[+tpl.dataset.tpl].studies.map(s => ({ id: uid(), type: s.type, params: { ...s.params } })); p.chart.studies = cfg.studies; save(); p.chart.invalidate(); toast('Template diterapkan'); return; }
   const add = e.target.closest('[data-add]');
-  if (add) { cfg.studies.push({ id: uid(), type: add.dataset.add, params: defaultParams(add.dataset.add) }); save(); p.chart.invalidate(); toast(`${INDICATORS[add.dataset.add].name} ditambahkan`); return; }
+  if (add) { cfg.studies.push({ id: uid(), type: add.dataset.add, params: studyParams(add.dataset.add) }); save(); p.chart.invalidate(); toast(`${INDICATORS[add.dataset.add].name} ditambahkan`); return; }
   const row = e.target.closest('[data-id]'), a = e.target.closest('[data-a]')?.dataset.a; if (!row || !a) return;
   const s = cfg.studies.find(x => x.id === row.dataset.id);
   if (a === 'eye') s.hidden = !s.hidden;
@@ -640,13 +642,8 @@ $('#indList').onclick = e => {
   if (a === 'set') return openStudySettings(p, s.id);
   save(); p.chart.invalidate(); renderIndModal();
 };
-function openStudySettings(pane, id) {
-  const s = pane.cfg.studies.find(x => x.id === id); if (!s) return;
-  const def = INDICATORS[s.type];
-  openForm(def.name, def.params.map(p => ({ ...p, value: s.params[p.key] })), vals => {
-    s.params = { ...s.params, ...vals }; save(); pane.chart.invalidate();
-  }, [['Hapus', () => { pane.cfg.studies.splice(pane.cfg.studies.indexOf(s), 1); save(); pane.chart.invalidate(); }], ['Default', () => { s.params = defaultParams(s.type); save(); pane.chart.invalidate(); }]]);
-}
+function openStudySettings(pane, id) { studyUI.open(pane, id); }
+const studyParams = k => ({ ...defaultParams(k), ...(state.studyDefaults?.[k] || {}) });
 
 // ---------- Form generik (dengan tab opsional) ----------
 function openForm(title, fields, onSave, extra = [], onLive) {
@@ -697,6 +694,7 @@ $('#closeForm').onclick = () => { formCancel?.(); $('#formModal').classList.add(
 $('#formModal').onclick = e => { if (e.target.id === 'formModal') { formCancel?.(); $('#formModal').classList.add('hidden'); } };
 
 // ---------- Pengaturan chart (dialog bermenu kiri; juga dibuka dengan ketuk 2x pada chart) ----------
+const studyUI = initStudyUI({ pane: act, state, save, toast, popMenu, uid });
 const chartSettings = initSettings({
   state, save, toast,
   apply: () => panes.forEach(p => { applyChartLook(p.chart); p.updateLegend(); }),
