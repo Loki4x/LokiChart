@@ -365,3 +365,18 @@ body.dark .switch::after { background: var(--bg); }
 #paperPanel h4 { margin: 16px 0 6px; font-size: 13px; color: var(--muted); text-transform: uppercase; }
 .paper-chip { font-size: 12px; white-space: nowrap; }
 #replayBar { overflow-x: auto; scrollbar-width: none; }
+/* replay seperti aplikasi charting mobile */
+body.replaying #tabbar { display: none; }
+#replayBar .icon-btn:disabled { opacity: .35; cursor: default; }
+#replayBar .rp-txt { border: 0; background: transparent; padding: 6px 10px; border-radius: 8px; cursor: pointer; font-size: 15px; }
+#replayBar .rp-txt:hover { background: var(--soft); }
+#tradePanel { position: absolute; right: 84px; bottom: 30px; z-index: 24; display: flex; align-items: center; gap: 6px; background: var(--panel); border-radius: 12px; box-shadow: var(--shadow); padding: 6px 8px 6px 4px; }
+#tradePanel.off button:not(.tp-qty) { opacity: .45; }
+body:not(.replaying) #tradePanel { display: none; }
+#tradePanel .tp-drag { color: var(--muted); cursor: grab; padding: 6px 2px; letter-spacing: -3px; touch-action: none; user-select: none; }
+#tradePanel button { border: 0; border-radius: 10px; padding: 9px 22px; font-weight: 600; cursor: pointer; }
+#tradePanel .tp-sell { background: #f23645; color: #fff; }
+#tradePanel .tp-buy { background: #2962ff; color: #fff; }
+#tradePanel .tp-qty { background: transparent; padding: 9px 12px; min-width: 40px; }
+#tradePanel .tp-flat { background: transparent; color: var(--muted); padding: 9px 10px; }
+@media (max-width: 700px) { #tradePanel { right: 8px; } #tradePanel button { padding: 8px 14px; } }

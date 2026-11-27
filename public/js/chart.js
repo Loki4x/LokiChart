@@ -297,6 +297,7 @@ export class Chart {
   }
   setTool(id) {
     this.tool = id; this.pending = null;
+    if (id === 'replay' && this.replaySel == null && this.candles.length) this.replaySel = Math.max(10, Math.min(this.candles.length - 2, Math.round(this.xi(this.plot.w * 0.7))));
     this._tmoved = false;
     const precise = id && TOOLS[id] && !TOOLS[id].freehand && (this.touchMode ?? matchMedia('(pointer: coarse)').matches);
     this.tcur = precise ? (this.tcur || { x: this.plot.w / 2, y: this.plot.h / 2 }) : null;
@@ -374,6 +375,10 @@ export class Chart {
     let deg = Math.round((-ang * 180) / Math.PI); if (deg <= -180) deg += 360;
     this._angleHint = { x: nx, y: ny, deg };
     return { t: this.iToT(this.xi(nx)), p: this.yp(ny) };
+  }
+  _setReplaySel(x) {
+    this.replaySel = Math.max(10, Math.min(this.candles.length - 2, Math.round(this.xi(x))));
+    this.emit('replaysel', this.replaySel); this.invalidate();
   }
   // titik kursor presisi (dengan magnet & penggaris sudut)
   _tpoint() {
@@ -511,16 +516,15 @@ export class Chart {
       if (lh.id === '__collapse') { this.legendCollapsed = !this.legendCollapsed; this.emit('legendcollapse', this.legendCollapsed); this.invalidate(); return; }
       this.emit('study', { id: lh.id, rect: lh }); return;
     }
+    if (this.tool === 'replay' && x < this.plot.w) {
+      this.drag = { type: 'replaysel' };
+      this._setReplaySel(x);
+      return;
+    }
     if (y >= this.timeY) { this.drag = { type: 'time', x, spacing: this.spacing }; return; }
     if (y > this.plot.h) { this.drag = { type: 'pan', x, y, scroll: this.scroll, pmin: this.pmin, pmax: this.pmax, auto: true }; return; }
     if (x > this.plot.w) { this.drag = { type: 'price', y, pmin: this.pmin, pmax: this.pmax }; this.autoScale = false; return; }
 
-    if (this.tool === 'replay') {
-      const i = Math.max(10, Math.min(this.candles.length - 1, Math.round(this.xi(x))));
-      this.setTool(null); this.emit('tool', null);
-      this.startReplay(i);
-      return;
-    }
     if (this.tool === 'zoomin') { this.drag = { type: 'zoomrect', x0: x, y0: y, x, y }; return; }
     if (this.tool === 'eraser') {
       const d = this._hitDrawing(x, y, tol);
@@ -615,6 +619,8 @@ export class Chart {
         const pt = this._tpoint();
         if (this.pending) { const pts = this.pending.points; pts[pts.length - 1] = pt; TOOLS[this.pending.tool].constrain?.(pts); }
         this.emit('drawstep', this.drawStep());
+      } else if (dr.type === 'replaysel') {
+        this._setReplaySel(x);
       } else if (dr.type === 'cross') {
         this.emit('crosshair', this._crossInfo(x));
       } else if (dr.type === 'brush' && this.pending) {
@@ -770,7 +776,7 @@ export class Chart {
 
     // seri harga (saat memilih titik replay, bar setelah garis dibuat pudar)
     const cur0 = this.cursor;
-    const fadeFrom = this.tool === 'replay' && cur0 && cur0.x < w ? Math.round(this.xi(cur0.x)) + 1 : null;
+    const fadeFrom = this.tool === 'replay' && this.replaySel != null ? this.replaySel + 1 : null;
     const drawSer = () => {
       if (this.hideSeries) return;
       if (fadeFrom != null && fadeFrom <= to) {
@@ -849,9 +855,16 @@ export class Chart {
     }
     // pemilihan titik awal replay
     const cur = this.cursor;
-    if (this.tool === 'replay' && cur && cur.x < w) {
-      const x = this.ix(Math.round(this.xi(cur.x))) + this.spacing / 2;
-      ctx.strokeStyle = '#2962ff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+    if (this.tool === 'replay' && this.replaySel != null) {
+      const i = this.replaySel, x = Math.round(this.ix(i) + this.spacing / 2) + 0.5, k = this.candles[i];
+      ctx.strokeStyle = '#2962ff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+      if (k) { // ikon gunting di harga penutupan bar
+        const y = this.py(k.c);
+        ctx.fillStyle = this.theme.text; ctx.font = '16px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('✂', x, y);
+      }
+      ctx.beginPath(); ctx.arc(x, h - 12, 8, 0, Math.PI * 2); ctx.fillStyle = this.cs.bg || this.theme.bg; ctx.fill();
+      ctx.strokeStyle = '#2962ff'; ctx.lineWidth = 1.5; ctx.stroke();
     }
     // crosshair dari chart lain (sinkronisasi layout)
     if (this.extCross != null && !(cur && cur.x < w)) {
@@ -941,6 +954,9 @@ export class Chart {
       }
       const i = Math.round(this.xi(cur.x));
       this._timeLabel(this.ix(i), this._ft(this.iToT(i)), th.crossBg);
+    }
+    if (this.tool === 'replay' && this.replaySel != null && this.candles[this.replaySel]) {
+      this._timeLabel(Math.round(this.ix(this.replaySel) + this.spacing / 2), 'Ulangi: ' + this._ft(this.candles[this.replaySel].t), '#2962ff');
     }
     if (this.tcur && this.tool && TOOLS[this.tool]) {
       const sp = this.tsnap || this.tcur, i = Math.round(this.xi(sp.x));
@@ -1231,10 +1247,11 @@ export class Chart {
     this.emit('replay', r); this.invalidate();
     return true;
   }
-  stopReplay() {
+  stopReplay(keepView = false) {
     if (!this.replay) return;
     this.candles = this.replay.full; this.replay = null;
-    this.goLatest(); this.emit('replay', null);
+    if (!keepView) this.goLatest();
+    this.emit('replay', null); this.invalidate();
   }
 
   screenshot() { return this.canvas.toDataURL('image/png'); }

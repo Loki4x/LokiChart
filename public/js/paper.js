@@ -13,7 +13,7 @@ export function initPaper(ctx) {
 
   function ensure() {
     const c = ctx.chart(), cfg = ctx.cfg();
-    if (!acc || acc.symbol !== cfg.symbol || acc.tf !== cfg.tf) {
+    if (!acc || acc.symbol !== cfg.symbol) {
       const start = ctx.state.paperStart || 10000;
       acc = { start, balance: start, positions: [], history: [], symbol: cfg.symbol, tf: cfg.tf, startedAt: c.candles.at(-1)?.t };
     }
@@ -32,24 +32,36 @@ export function initPaper(ctx) {
     ctx.onChange?.();
   }
 
+  // order pasar sekali ketuk (jumlah dari panel trading)
   function order(dir) {
     ensure();
     const px = price(); if (px == null) return;
-    const last = ctx.state.paperUnits || 1;
-    ctx.openForm(`${dir > 0 ? 'Beli' : 'Jual'} ${ctx.cfg().symbol} @ ${ctx.fmt(px)}`, [
-      { key: 'units', label: 'Jumlah (unit)', type: 'number', value: last, min: 0.0001, max: 1e9, step: 'any' },
-      { key: 'sl', label: `Stop loss (harga, opsional) — ${dir > 0 ? 'di bawah' : 'di atas'} ${ctx.fmt(px)}`, type: 'text', value: '' },
-      { key: 'tp', label: `Take profit (harga, opsional) — ${dir > 0 ? 'di atas' : 'di bawah'} ${ctx.fmt(px)}`, type: 'text', value: '' },
+    const units = ctx.state.paperUnits || 1;
+    acc.positions.push({ id: uid(), dir, units, entry: px, t: ctx.chart().candles.at(-1).t, sl: null, tp: null });
+    ctx.toast(`${dir > 0 ? 'Beli' : 'Jual'} ${units} @ ${ctx.fmt(px)}`, 1500);
+    sync();
+  }
+  function flatten() {
+    if (!acc || !acc.positions.length) return ctx.toast('Tidak ada posisi terbuka', 1500);
+    const n = acc.positions.length;
+    for (const p of [...acc.positions]) close(p, price(), 'Ratakan');
+    ctx.toast(`${n} posisi ditutup`, 1500); sync();
+  }
+  function editSLTP(p) {
+    const px = price();
+    ctx.openForm(`SL/TP ${p.dir > 0 ? 'Long' : 'Short'} ${p.units} @ ${ctx.fmt(p.entry)}`, [
+      { key: 'sl', label: `Stop loss (${p.dir > 0 ? 'di bawah' : 'di atas'} harga sekarang ${ctx.fmt(px)}) — kosongkan untuk hapus`, type: 'text', value: p.sl ?? '' },
+      { key: 'tp', label: `Take profit (${p.dir > 0 ? 'di atas' : 'di bawah'} harga sekarang) — kosongkan untuk hapus`, type: 'text', value: p.tp ?? '' },
     ], v => {
       const pf = x => { const t = String(x ?? '').trim(); if (!t) return null; const n = parseFloat(t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t); return isFinite(n) && n > 0 ? n : null; };
       const sl = pf(v.sl), tp = pf(v.tp);
-      if (sl != null && (dir > 0 ? sl >= px : sl <= px)) { ctx.toast('Stop loss harus ' + (dir > 0 ? 'di bawah' : 'di atas') + ' harga masuk'); return false; }
-      if (tp != null && (dir > 0 ? tp <= px : tp >= px)) { ctx.toast('Take profit harus ' + (dir > 0 ? 'di atas' : 'di bawah') + ' harga masuk'); return false; }
-      ctx.state.paperUnits = v.units; ctx.save();
-      acc.positions.push({ id: uid(), dir, units: v.units, entry: px, t: ctx.chart().candles.at(-1).t, sl, tp });
-      ctx.toast(`${dir > 0 ? 'Beli' : 'Jual'} ${v.units} unit @ ${ctx.fmt(px)}`);
-      sync();
+      if (sl != null && (p.dir > 0 ? sl >= px : sl <= px)) { ctx.toast('Stop loss harus ' + (p.dir > 0 ? 'di bawah' : 'di atas') + ' harga sekarang'); return false; }
+      if (tp != null && (p.dir > 0 ? tp <= px : tp >= px)) { ctx.toast('Take profit harus ' + (p.dir > 0 ? 'di atas' : 'di bawah') + ' harga sekarang'); return false; }
+      p.sl = sl; p.tp = tp; sync();
     });
+  }
+  function setUnits() {
+    ctx.openForm('Jumlah per order', [{ key: 'u', label: 'Jumlah (unit)', type: 'number', value: ctx.state.paperUnits || 1, min: 0.0001, max: 1e9, step: 'any' }], v => { ctx.state.paperUnits = v.u; ctx.save(); ctx.onChange?.(); });
   }
 
   function close(p, px, reason, t) {
@@ -99,7 +111,7 @@ export function initPaper(ctx) {
       <h4>Posisi terbuka (${acc.positions.length})</h4>
       ${acc.positions.map(p => `<div class="tree-row"><span class="nm"><b class="${p.dir > 0 ? 'up' : 'down'}">${p.dir > 0 ? 'Long' : 'Short'} ${p.units}</b> @ ${ctx.fmt(p.entry)}
         <small>SL ${p.sl != null ? ctx.fmt(p.sl) : '—'} · TP ${p.tp != null ? ctx.fmt(p.tp) : '—'} · <span class="${pnl(p, px) >= 0 ? 'up' : 'down'}">${money(pnl(p, px))}</span></small></span>
-        <button class="pill" data-close="${p.id}">Tutup</button></div>`).join('') || '<p class="note">Tidak ada posisi terbuka.</p>'}
+        <button class="pill" data-sltp="${p.id}">SL/TP</button><button class="pill" data-close="${p.id}">Tutup</button></div>`).join('') || '<p class="note">Tidak ada posisi terbuka.</p>'}
       ${acc.positions.length > 1 ? '<button class="ghost" data-p="closeall">Tutup semua</button>' : ''}
       <h4>Statistik sesi</h4>
       <div class="pp-grid">
@@ -114,12 +126,14 @@ export function initPaper(ctx) {
   }
 
   panel.addEventListener('click', e => {
+    const st = e.target.closest('[data-sltp]');
+    if (st) { const p = acc.positions.find(x => x.id === st.dataset.sltp); if (p) editSLTP(p); return; }
     const cl = e.target.closest('[data-close]');
     if (cl) { const p = acc.positions.find(x => x.id === cl.dataset.close); if (p) { close(p, price(), 'Manual'); ctx.toast(`Posisi ditutup: ${money(acc.history[0].pnl)}`); } return sync(); }
     const a = e.target.closest('[data-p]')?.dataset.p;
     if (a === 'buy') order(1);
     if (a === 'sell') order(-1);
-    if (a === 'closeall') { for (const p of [...acc.positions]) close(p, price(), 'Manual'); sync(); }
+    if (a === 'closeall') flatten();
     if (a === 'reset' && confirm('Reset akun paper trading sesi ini?')) { acc = null; ensure(); sync(); }
     if (a === 'start') ctx.openForm('Saldo awal paper trading', [{ key: 'v', label: 'Saldo awal', type: 'number', value: ctx.state.paperStart || 10000, min: 1, max: 1e12 }], v => { ctx.state.paperStart = v.v; ctx.save(); if (acc && !acc.history.length && !acc.positions.length) { acc.start = acc.balance = v.v; } sync(); });
   });
@@ -139,5 +153,5 @@ export function initPaper(ctx) {
     panel.classList.add('hidden');
   }
 
-  return { order, onBar, summaryChip, open: () => { ensure(); render(); panel.classList.remove('hidden'); }, endSession, active: () => !!acc };
+  return { order, flatten, setUnits, units: () => ctx.state.paperUnits || 1, onBar, summaryChip, open: () => { ensure(); render(); panel.classList.remove('hidden'); }, endSession, active: () => !!acc };
 }

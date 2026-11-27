@@ -143,6 +143,7 @@ class Pane {
     c.on('alertmove', al => { const a = alerts.find(x => x.id === al.id); if (a) { a.price = al.price; a.active = true; saveAlerts(); toast(`Peringatan dipindah ke ${c.fmt(al.price)}`); } });
     c.on('alertclick', al => editAlert(alerts.find(x => x.id === al.id)));
     c.on('replay', r => { if (this.idx === state.active) { if (r) paper.onBar(); renderReplayBar(); } });
+    c.on('replaysel', () => { if (this.idx === state.active) renderReplayBar(); });
     c.on('needmore', () => this.loadMore());
   }
   get cfg() { return state.panes[this.idx]; }
@@ -940,51 +941,120 @@ setInterval(async () => {
 // Replay
 // =====================================================================
 let replayTimer = null, replaySpeed = 1;
+const RP_IC = { pick: 'M4 4V20 M20 12H8 M12 8L8 12L12 16', rt: 'M5 4L15 12L5 20Z M19 4V20 M22 4V20' };
 function replayToggle() {
   const c = chart();
   if (c.replay || c.tool === 'replay') return stopReplay();
+  c.replaySel = null;
   c.setTool('replay');
-  toast('Replay: ketuk bar tempat replay dimulai', 3000);
+  document.body.classList.add('replaying');
+  toast('Geser garis biru ke bar awal, lalu tekan ▶', 3000);
   renderReplayBar();
 }
-function stopReplay() { clearInterval(replayTimer); replayTimer = null; const c = chart(); if (c.replay) paper.endSession(); c.stopReplay(); if (c.tool === 'replay') c.setTool(null); renderReplayBar(); }
+function stopReplay() {
+  clearInterval(replayTimer); replayTimer = null;
+  const c = chart();
+  if (c.replay) paper.endSession();
+  c.stopReplay(); c.replaySel = null;
+  if (c.tool === 'replay') c.setTool(null);
+  document.body.classList.remove('replaying');
+  renderReplayBar();
+}
+function startFromSelection() {
+  const c = chart();
+  if (c.replaySel == null) return;
+  const i = c.replaySel;
+  c.setTool(null); c.startReplay(i);
+  renderReplayBar();
+}
+function stepReplay() {
+  if (!chart().replayStep(1)) { clearInterval(replayTimer); replayTimer = null; toast('Replay mencapai bar terakhir'); }
+  renderReplayBar();
+}
+function setPlaying(on) {
+  clearInterval(replayTimer); replayTimer = null;
+  if (on) replayTimer = setInterval(stepReplay, 1000 / replaySpeed);
+  renderReplayBar();
+}
 function renderReplayBar() {
-  const c = chart(), bar = $('#replayBar'), on = !!(c?.replay || c?.tool === 'replay');
-  bar.classList.toggle('hidden', !on); $('#bottombar').classList.toggle('hidden', on);
+  const c = chart(), bar = $('#replayBar'), sel = c?.tool === 'replay', on = !!(c?.replay || sel);
+  bar.classList.toggle('hidden', !on);
+  document.body.classList.toggle('replaying', on);
+  $('#tradePanel').classList.toggle('hidden', !on || state.tradePanel === false);
+  $('#tradePanel').classList.toggle('off', !c?.replay);
+  $('#tradePanel .tp-qty').textContent = String(paper.units()).replace('.', ',');
   requestAnimationFrame(() => panes.forEach(p => p.chart.resize()));
   if (!on) { clearInterval(replayTimer); replayTimer = null; return; }
-  const cfg = act().cfg;
-  if (!c.replay) { bar.innerHTML = `<button class="icon-btn on" title="Pilih titik awal">${icon(IC.start)}</button><span class="lbl">Ketuk bar di chart untuk memulai replay</span><span class="spacer"></span><button class="icon-btn" data-r="exit" title="Keluar">${icon(IC.close)}</button>`; return; }
-  const left = c.replay.full.length - 1 - c.replay.idx;
-  bar.innerHTML = `<button class="icon-btn" data-r="pick" title="Pilih titik awal">${icon(IC.start)}</button>
-    <button class="icon-btn" data-r="play" title="${replayTimer ? 'Jeda' : 'Putar'}">${icon(replayTimer ? IC.pause : IC.play)}</button>
-    <button class="icon-btn" data-r="step" title="Maju 1 bar">${icon(IC.step)}</button>
-    <select data-r="speed">${[1, 2, 3, 5, 10, 25].map(s => `<option value="${s}" ${s === replaySpeed ? 'selected' : ''}>${s}x</option>`).join('')}</select>
-    <span class="lbl">${TF_SHORT[cfg.tf]} · ${left} bar</span><span class="spacer"></span>
-    ${paper.summaryChip()}
-    <button class="pp-sell sm" data-r="sell">Jual</button><button class="pp-buy sm" data-r="buy">Beli</button>
-    <button class="icon-btn" data-r="exit" title="Keluar replay">${icon(IC.close)}</button>`;
+  const cfg = act().cfg, playing = !!replayTimer;
+  const btn = (r, ic, title, { act: a = false, dis = false } = {}) => `<button class="icon-btn ${a ? 'on' : ''}" data-r="${r}" title="${title}" ${dis ? 'disabled' : ''}>${icon(ic)}</button>`;
+  bar.innerHTML = `${btn('pick', RP_IC.pick, 'Pilih bar awal', { act: sel })}
+    ${btn('play', playing ? IC.pause : IC.play, sel ? 'Mulai replay dari garis biru' : playing ? 'Jeda' : 'Putar')}
+    ${btn('step', IC.step, 'Maju 1 bar', { dis: sel })}
+    <button class="rp-txt" data-r="speed" title="Kecepatan">${replaySpeed}x</button>
+    <button class="rp-txt" data-r="tf" title="Interval">${TF_SHORT[cfg.tf]}</button>
+    ${btn('rt', RP_IC.rt, 'Lompat ke waktu nyata (akhiri replay)', { dis: sel })}
+    <span class="spacer"></span>
+    ${c.replay ? paper.summaryChip() : ''}
+    ${btn('set', 'M12 2L20.7 7V17L12 22L3.3 17V7Z M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0', 'Pengaturan replay')}
+    ${btn('exit', IC.close, 'Tutup replay')}`;
 }
 $('#replayBar').onclick = e => {
   if (e.target.closest('[data-p=panel]')) return paper.open();
-  const r = e.target.closest('[data-r]')?.dataset.r; if (!r || r === 'speed') return;
-  const c = chart();
-  if (r === 'exit') return stopReplay();
-  if (r === 'buy') return paper.order(1);
-  if (r === 'sell') return paper.order(-1);
-  if (r === 'pick') { clearInterval(replayTimer); replayTimer = null; c.setTool('replay'); toast('Ketuk bar tempat replay dimulai'); return renderReplayBar(); }
-  if (r === 'step') { c.replayStep(1); return renderReplayBar(); }
-  if (r === 'play') {
-    if (replayTimer) { clearInterval(replayTimer); replayTimer = null; }
-    else replayTimer = setInterval(() => { if (!chart().replayStep(1)) { clearInterval(replayTimer); replayTimer = null; toast('Replay mencapai bar terakhir'); } renderReplayBar(); }, 1000 / replaySpeed);
-    renderReplayBar();
+  const b = e.target.closest('[data-r]'); if (!b || b.disabled) return;
+  const r = b.dataset.r, c = chart();
+  if (r === 'exit' || r === 'rt') return stopReplay();
+  if (r === 'pick') {
+    if (c.tool === 'replay') return;
+    setPlaying(false);
+    const idx = c.replay ? c.replay.idx : null;
+    if (c.replay) { paper.endSession(); c.stopReplay(true); }
+    c.replaySel = idx; c.setTool('replay');
+    toast('Geser garis biru ke bar awal, lalu tekan ▶', 2500);
+    return renderReplayBar();
   }
+  if (r === 'play') { if (c.tool === 'replay') return startFromSelection(); return setPlaying(!replayTimer); }
+  if (r === 'step') return stepReplay();
+  if (r === 'speed') return popMenu(b, '<div class="mh">Kecepatan</div>' + [0.5, 1, 2, 3, 5, 10, 25].map(v => `<button class="mi ${v === replaySpeed ? 'on' : ''}" data-v="${v}">${v}x</button>`).join(''), v => { replaySpeed = +v; setPlaying(!!replayTimer); });
+  if (r === 'tf') return popMenu(b, '<div class="mh">Interval</div>' + TFS.map(([v, n]) => `<button class="mi ${act().cfg.tf === v ? 'on' : ''}" data-v="${v}">${n}</button>`).join(''), v => replayChangeTf(v));
+  if (r === 'set') return openForm('Pengaturan replay', [
+    { key: 'speed', label: 'Kecepatan', type: 'select', options: [0.5, 1, 2, 3, 5, 10, 25].map(v => [v, v + 'x']), value: replaySpeed },
+    { key: 'units', label: 'Jumlah per order (unit)', type: 'number', value: paper.units(), min: 0.0001, max: 1e9, step: 'any' },
+    { key: 'start', label: 'Saldo awal paper trading', type: 'number', value: state.paperStart || 10000, min: 1, max: 1e12 },
+    { key: 'panel', label: 'Tampilkan panel trading (Jual / Beli)', type: 'bool', value: state.tradePanel !== false },
+  ], v => { replaySpeed = +v.speed; state.paperUnits = v.units; state.paperStart = v.start; state.tradePanel = v.panel; save(); setPlaying(!!replayTimer); });
 };
-$('#replayBar').onchange = e => {
-  if (e.target.dataset.r !== 'speed') return;
-  replaySpeed = +e.target.value;
-  if (replayTimer) { clearInterval(replayTimer); replayTimer = null; $('#replayBar [data-r=play]').click(); }
-};
+// ganti interval saat replay: lanjutkan dari waktu yang sama
+async function replayChangeTf(tf) {
+  const c = chart(), p = act(), wasSel = c.tool === 'replay';
+  const t = c.replay ? c.candles.at(-1)?.t : c.candles[c.replaySel]?.t;
+  setPlaying(false);
+  p.cfg.tf = tf; remember(p.cfg); save(); renderHeader();
+  await p.load();
+  if (t == null || !c.candles.length) return renderReplayBar();
+  let i = c.candles.length - 1; while (i > 0 && c.candles[i].t > t) i--;
+  c.replaySel = Math.max(10, i);
+  if (wasSel) c.setTool('replay'); else { c.setTool(null); c.startReplay(c.replaySel); }
+  renderReplayBar();
+}
+// panel trading mengambang (Jual · jumlah · Beli · Ratakan)
+$('#tradePanel').addEventListener('click', e => {
+  const t = e.target.closest('[data-t]')?.dataset.t; if (!t) return;
+  if (t === 'qty') return paper.setUnits();
+  if (!chart().replay) return toast('Mulai replay dulu (tekan ▶)', 1500);
+  if (t === 'buy') paper.order(1);
+  if (t === 'sell') paper.order(-1);
+  if (t === 'flat') paper.flatten();
+});
+(() => {
+  const tp = $('#tradePanel');
+  tp.querySelector('.tp-drag').addEventListener('pointerdown', e => {
+    e.preventDefault();
+    const r = tp.getBoundingClientRect(), wr = $('#chartWrap').getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top;
+    const mv = ev => { tp.style.left = Math.max(0, Math.min(wr.width - r.width, ev.clientX - wr.left - dx)) + 'px'; tp.style.top = Math.max(0, Math.min(wr.height - r.height, ev.clientY - wr.top - dy)) + 'px'; tp.style.right = 'auto'; tp.style.bottom = 'auto'; };
+    const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); };
+    addEventListener('pointermove', mv); addEventListener('pointerup', up);
+  });
+})();
 
 // =====================================================================
 // Pusat analisis
@@ -1047,7 +1117,8 @@ document.addEventListener('keydown', e => {
   else if (e.altKey && e.key.toLowerCase() === 'h') selectTool('hline');
   else if (e.altKey && e.key.toLowerCase() === 'f') selectTool('fibret');
   else if (e.altKey && e.key.toLowerCase() === 'a') editAlert(null);
-  else if (c.replay && e.key === 'ArrowRight') { c.replayStep(1); renderReplayBar(); }
+  else if (c.replay && e.key === 'ArrowRight') stepReplay();
+  else if (c.tool === 'replay' && e.key === 'Enter') startFromSelection();
   else if (/^[a-z]$/i.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey && $('#searchModal').classList.contains('hidden')) {
     openSearch(); $('#symSearch').value = e.key.toUpperCase(); renderSymList(); e.preventDefault();
   }
