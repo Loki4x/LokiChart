@@ -754,10 +754,14 @@ export class Chart {
     // seri harga (saat memilih titik replay, bar setelah garis dibuat pudar)
     const cur0 = this.cursor;
     const fadeFrom = this.tool === 'replay' && cur0 && cur0.x < w ? Math.round(this.xi(cur0.x)) + 1 : null;
-    if (fadeFrom != null && fadeFrom <= to) {
-      this._drawSeries(series, from, Math.min(to, fadeFrom - 1));
-      ctx.globalAlpha = 0.25; this._drawSeries(series, Math.max(from, fadeFrom), to); ctx.globalAlpha = 1;
-    } else this._drawSeries(series, from, to);
+    const drawSer = () => {
+      if (this.hideSeries) return;
+      if (fadeFrom != null && fadeFrom <= to) {
+        this._drawSeries(series, from, Math.min(to, fadeFrom - 1));
+        ctx.globalAlpha = 0.25; this._drawSeries(series, Math.max(from, fadeFrom), to); ctx.globalAlpha = 1;
+      } else this._drawSeries(series, from, to);
+    };
+    if (!this.seriesOnTop) drawSer();
 
     for (const st of mainSt) { const r = this.studyResult(st); if (r) this._drawResult(r, from, toFar, py, { back: false }); }
 
@@ -793,6 +797,7 @@ export class Chart {
     if (!this.hidden) {
       for (const d of this.drawings) if (!d.hidden && this.visibleOnTf(d)) this._drawDrawing(d, d === this.selected);
     }
+    if (this.seriesOnTop) drawSer();
     if (this.pending) this._drawDrawing(this.pending, true);
 
     // zoom rect

@@ -151,10 +151,11 @@ export function initDrawUI(ctx) {
       case 'hide': { closePop(); c.snapshot(); d.hidden = true; c.selected = null; c.commit(); ctx.onSelect(null); ctx.toast('Gambar disembunyikan — tampilkan lagi lewat Pohon Objek'); return; }
       case 'delete': closePop(); return c.removeDrawing(d);
       case 'more':
-        return openPop(btn, `<button class="mi" data-v="clone">Klon</button><button class="mi" data-v="front">Bawa ke depan</button><button class="mi" data-v="back">Kirim ke belakang</button>
+        return openPop(btn, `<button class="mi" data-v="copy">Salin</button><button class="mi" data-v="clone">Klon</button><button class="mi" data-v="front">Bawa ke depan</button><button class="mi" data-v="back">Kirim ke belakang</button>
           <button class="mi" data-v="settings">Pengaturan…</button><button class="mi" data-v="delete">Hapus</button>`, ev => {
           const v = ev.target.closest('[data-v]')?.dataset.v; if (!v || ev.type !== 'click') return;
           closePop();
+          if (v === 'copy') ctx.copyDrawing(d);
           if (v === 'clone') c.cloneDrawing(d);
           if (v === 'front' || v === 'back') { c.snapshot(); c.drawings = c.drawings.filter(x => x !== d); v === 'front' ? c.drawings.push(d) : c.drawings.unshift(d); c.commit(); }
           if (v === 'settings') openSettings(d);

@@ -60,6 +60,7 @@ if (!state.favMigrated) {
 if (saved.symbol) { state.panes[0] = { ...state.panes[0], symbol: saved.symbol, broker: saved.broker || 'oanda', tf: saved.tf || '5m' }; }
 ['symbol', 'broker', 'tf', 'chartType', 'indicators', 'ovOpen'].forEach(k => delete state[k]);
 const save = () => localStorage.setItem('ac:state', JSON.stringify(state));
+let clipDrawing = JSON.parse(localStorage.getItem('ac:clip') || 'null');
 let SYMBOLS = [];
 const symInfo = (s, b) => SYMBOLS.find(x => x.symbol === s && (!b || x.broker === b));
 const LAYOUTS = { 1: ['1'], 2: ['2h', '2v'], 3: ['3c', '3r', '3l', '3t'], 4: ['4', '4c', '4r', '4l'], 6: ['6', '6v'], 8: ['8'] };
@@ -114,7 +115,7 @@ class Pane {
     Object.assign(c, { magnet: state.magnet, styleDefaults: state.styleDefaults, extraDefaults: state.extraDefaults, stay: G.stay, hidden: G.hidden, lockAll: G.lockAll, hideStudies: G.hideStudies, angleSnap: !!state.angleSnap, legendCollapsed: !!state.legendCollapsed });
     this.el.addEventListener('pointerdown', () => setActive(this.idx), true);
     this.el.querySelector('.go-latest').onclick = () => c.goLatest();
-    this.legend.addEventListener('click', e => { if (e.target.closest('.t')) openChartSettings(); });
+    this.legend.addEventListener('click', e => { const t = e.target.closest('.t'); if (t) { setActive(this.idx); symbolMenu(this, t); } });
     c.on('crosshair', info => {
       this.hover = info; this.updateLegend();
       if (state.sync.crosshair) for (const p of panes) if (p !== this) { p.chart.extCross = info ? info.t : null; p.chart.invalidate(); }
@@ -532,6 +533,7 @@ const drawUI = initDrawUI({
   applyDefaults: () => { for (const c of allCharts()) { c.styleDefaults = state.styleDefaults; c.extraDefaults = state.extraDefaults; } },
   addLineAlert: d => editAlert(null, d),
   setAngleSnap: on => setAngleSnap(on),
+  copyDrawing: d => { clipDrawing = { symbol: act().cfg.symbol, d: JSON.parse(JSON.stringify(d)) }; localStorage.setItem('ac:clip', JSON.stringify(clipDrawing)); toast('Gambar disalin — tempel lewat menu judul simbol'); },
 });
 function onSelect(d) {
   drawUI.reset(); drawUI.render(d);
@@ -709,6 +711,69 @@ let formCancel = null;
 $('#closeForm').onclick = () => { formCancel?.(); $('#formModal').classList.add('hidden'); };
 $('#formModal').onclick = e => { if (e.target.id === 'formModal') { formCancel?.(); $('#formModal').classList.add('hidden'); } };
 
+// ---------- Menu judul simbol (ketuk "Gold / U.S. Dollar · 5m · OANDA" di kiri atas) ----------
+function copyText(t) {
+  if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(t).catch(() => fallback());
+  return fallback();
+  function fallback() { const a = document.createElement('textarea'); a.value = t; document.body.appendChild(a); a.select(); try { document.execCommand('copy'); } catch { /* */ } a.remove(); }
+}
+function pasteDrawing() {
+  const c = chart(), cfg = act().cfg;
+  if (!clipDrawing) return toast('Belum ada gambar yang disalin');
+  const d = JSON.parse(JSON.stringify(clipDrawing.d)); d.id = uid();
+  const last = c.candles.at(-1);
+  if (clipDrawing.symbol === cfg.symbol) d.points.forEach(p => { p.t += c.tfMs * 5; });
+  else if (last) {
+    // simbol berbeda: geser agar berada di sekitar harga & waktu terakhir
+    const avgP = d.points.reduce((a, p) => a + p.p, 0) / d.points.length, maxT = Math.max(...d.points.map(p => p.t));
+    const k = last.c / avgP;
+    d.points.forEach(p => { p.p *= k; p.t += last.t - maxT; });
+  }
+  c.snapshot(); c.drawings.push(d); c.selected = d; c.commit(); onSelect(d);
+  toast('Gambar ditempel');
+}
+function symbolMenu(pane, titleEl) {
+  const c = pane.chart, cfg = pane.cfg, last = c.candles.at(-1);
+  const price = last ? c.fmt(last.c) : '—';
+  // bingkai di sekitar judul + tombol ⋯
+  const bar = $('#symBar'), r = titleEl.getBoundingClientRect(), wr = $('#chartWrap').getBoundingClientRect();
+  bar.innerHTML = `<span class="sbn">${titleEl.textContent}</span><button class="icon-btn" title="Lainnya">${icon(IC.more)}</button>`;
+  bar.style.left = r.left - wr.left - 6 + 'px'; bar.style.top = r.top - wr.top - 5 + 'px';
+  bar.classList.remove('hidden');
+  const I = {
+    alert: 'M12 13m-7 0a7 7 0 1 0 14 0a7 7 0 1 0 -14 0 M12 9V13L14 15 M5 3L2 6 M19 3L22 6 M18 18h5 M20.5 15.5v5',
+    ind: 'M3 20V14 M7 20V10 M11 20V13 M15 20V8 M19 6V12 M16 9H22', info: IC.info, layers: IC.layers, eye: IC.eye, eyeoff: IC.eyeoff, gear: 'M12 2L20.7 7V17L12 22L3.3 17V7Z M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0',
+    copy: 'M8 8H20V20H8Z M4 16V4H16', paste: 'M8 4H6V21H18V4H16 M9 2H15V6H9Z',
+  };
+  const mi = (v, ic, t, sub = '') => `<button class="mi" data-v="${v}">${ic ? icon(ic) : '<span style="width:20px"></span>'}<span>${t}</span>${sub ? '<span class="x">›</span>' : ''}</button>`;
+  const main = () => mi('alert', I.alert, `Tambahkan peringatan untuk ${cfg.symbol} pada ${price}…`) +
+    mi('ind', I.ind, `Tambah Indikator/Strategi pada ${cfg.symbol}…`) + '<hr>' +
+    mi('info', I.info, 'Info simbol…') + '<hr>' +
+    mi('copy', I.copy, `Salin harga ${price}`) + mi('paste', I.paste, clipDrawing ? `Tempel gambar (${TOOLS[clipDrawing.d.tool]?.name || 'gambar'})` : 'Tempel') + '<hr>' +
+    mi('order', I.layers, 'Urutan visual', 1) +
+    mi('hide', c.hideSeries ? I.eye : I.eyeoff, c.hideSeries ? 'Tampilkan' : 'Sembunyikan') + '<hr>' +
+    mi('settings', I.gear, 'Pengaturan…');
+  const open = html => popMenu(bar, html, v => {
+    if (v === 'order') return setTimeout(() => open(`<button class="mi" data-v="back">‹ Urutan visual</button><hr>` +
+      `<button class="mi ${c.seriesOnTop ? 'on' : ''}" data-v="front">Bawa ke depan (di atas gambar)</button><button class="mi ${!c.seriesOnTop ? 'on' : ''}" data-v="behind">Kirim ke belakang (di bawah gambar)</button>`));
+    if (v === 'back') return setTimeout(() => open(main()));
+    bar.classList.add('hidden');
+    if (v === 'alert') editAlert(null);
+    if (v === 'ind') openIndicators();
+    if (v === 'info') hubAction('detail');
+    if (v === 'copy' && last) { copyText(c.fmt(last.c).replace(/\./g, '').replace(',', '.')); toast(`Harga ${price} disalin`); }
+    if (v === 'paste') pasteDrawing();
+    if (v === 'front' || v === 'behind') { c.seriesOnTop = v === 'front'; c.invalidate(); }
+    if (v === 'hide') { c.hideSeries = !c.hideSeries; c.invalidate(); toast(c.hideSeries ? 'Seri harga disembunyikan' : 'Seri harga ditampilkan'); }
+    if (v === 'settings') openChartSettings('simbol');
+  });
+  open(main());
+  bar.querySelector('button').onclick = () => open(main());
+}
+document.addEventListener('pointerdown', e => {
+  if (!e.target.closest('#symBar') && !e.target.closest('#popMenu')) $('#symBar').classList.add('hidden');
+}, true);
+
 // ---------- Pengaturan chart (dialog bermenu kiri; juga dibuka dengan ketuk 2x pada chart) ----------
 const studyUI = initStudyUI({ pane: act, state, save, toast, popMenu, uid });
 const chartSettings = initSettings({
@@ -878,8 +943,8 @@ function renderHub() {
     <div class="hub-sec">Lainnya</div>
     <div class="hub-grid">${b('alerts', 'Peringatan', IC.bell)}${b('tree', 'Pohon objek', IC.layers)}${b('help', 'Bantuan', IC.help)}</div>`;
 }
-$('#hubBody').onclick = e => {
-  const h = e.target.closest('[data-h]')?.dataset.h; if (!h) return;
+$('#hubBody').onclick = e => { const h = e.target.closest('[data-h]')?.dataset.h; if (h) hubAction(h, e.target.closest('[data-h]')); };
+function hubAction(h, anchorEl) {
   const cfg = act().cfg;
   if (h === 'layout') { togglePanel('layoutPanel', true); renderLayoutPanel(); }
   if (h === 'save') {
@@ -888,7 +953,7 @@ $('#hubBody').onclick = e => {
   }
   if (h === 'open') {
     if (!state.layouts.length) return toast('Belum ada layout tersimpan');
-    popMenu(e.target.closest('[data-h]'), '<div class="mh">Layout tersimpan</div>' + state.layouts.map((l, k) => `<button class="mi" data-v="${k}">${esc(l.name)} <span class="x">${LAYOUT_N[l.layout]} chart</span></button>`).join(''), v => {
+    popMenu(anchorEl, '<div class="mh">Layout tersimpan</div>' + state.layouts.map((l, k) => `<button class="mi" data-v="${k}">${esc(l.name)} <span class="x">${LAYOUT_N[l.layout]} chart</span></button>`).join(''), v => {
       const l = state.layouts[+v]; state.layout = l.layout; state.panes = JSON.parse(JSON.stringify(l.panes)); state.active = 0; save();
       panes.forEach(p => p.destroy()); panes = []; $('#charts').innerHTML = ''; buildPanes(); renderHeader();
     });

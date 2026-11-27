@@ -80,6 +80,7 @@ Jika kredensial belum diisi, aplikasi memakai **data demo sintetis** (badge oran
 - **Chart:** candle / candle kosong / Heikin Ashi / bar / garis / area; toolbar bawah (simbol, interval, Gambar, Indikator, Layout, Peringatan, Jenis chart, Replay, Pohon objek, Pusat analisis, Undo/Redo, Layar penuh, Bagikan)
 - **Pengaturan chart/simbol:** warna badan/batas/sumbu naik-turun, warnai berdasarkan penutupan sebelumnya, latar, grid, garis harga, hitung mundur, legenda OHLC (ketuk nama simbol di chart)
 - **Layout:** 1, 2, 3, 4, 6, 8 chart (beberapa susunan) dengan **sinkronisasi** simbol, interval, crosshair, dan waktu
+- **Judul simbol (kiri atas):** ketuk → bingkai + menu: tambahkan peringatan pada harga sekarang, tambah indikator, info simbol, salin harga, tempel gambar (salin gambar lewat menu ⋯ gambar), urutan visual (seri di depan/belakang gambar), sembunyikan seri, pengaturan
 - **Legenda indikator (kiri atas):** ketuk nama indikator → bingkai dengan tombol 👁 sembunyikan, ⚙ pengaturan (tab **Input / Corak / Visibilitas**, tombol **Bawaan**: reset / simpan sebagai bawaan), 🗑 hapus, ⋯ (duplikat, urutan, sembunyikan/tampilkan/hapus semua). Indikator tersembunyi tampil pudar dengan ikon mata dicoret; tombol ^ melipat daftar.
 - **Indikator, metrik dan strategi:** Favorit, Template indikator, kategori Tren/Osilator/Volume/Volatilitas — 16 indikator yang bisa diatur:
   Volume, SMA, EMA, WMA, Bollinger Bands, VWAP, Ichimoku, Supertrend, Pivot Points, **Struktur Pasar & Order Block** (HH/HL/LH/LL, BOS, CHoCH), RSI, MACD, Stochastic, ATR, CCI, OBV, ADX/DMI
