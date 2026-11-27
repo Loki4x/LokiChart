@@ -9,15 +9,16 @@ import { initDrawUI } from './drawui.js';
 import { initSettings } from './settings.js';
 import { initStudyUI } from './studyui.js';
 import { initPaper } from './paper.js';
+import { tfMs, tfName, TF_GROUPS, ALL_TFS, parseTf } from './data/timeframes.js';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const uid = () => Math.random().toString(36).slice(2, 10);
 const icon = d => `<svg class="i" viewBox="0 0 24 24"><path d="${d}"/></svg>`;
 const BROKERS = { oanda: 'OANDA', forexcom: 'FOREX.com' };
-const TFS = [['1m', '1 menit'], ['3m', '3 menit'], ['5m', '5 menit'], ['15m', '15 menit'], ['30m', '30 menit'], ['1h', '1 jam'], ['2h', '2 jam'], ['4h', '4 jam'], ['1D', '1 hari'], ['1W', '1 minggu']];
-const TF_SHORT = { '1m': '1m', '3m': '3m', '5m': '5m', '15m': '15m', '30m': '30m', '1h': '1j', '2h': '2j', '4h': '4j', '1D': '1H', '1W': '1M' };
-const TF_MS = { '1m': 60e3, '3m': 180e3, '5m': 300e3, '15m': 900e3, '30m': 1800e3, '1h': 3600e3, '2h': 7200e3, '4h': 14400e3, '1D': 86400e3, '1W': 604800e3 };
+// interval: lihat data/timeframes.js (label = kode interval, mis. 45m, 4h, 1D, 1M)
+const TF_SHORT = new Proxy({}, { get: (_, k) => String(k) });
+const TFS = () => [...new Set([...state.tfFav, ...ALL_TFS, ...state.customTfs])].map(v => [v, tfName(v)]);
 const TYPES = [['candles', 'Candle'], ['hollow', 'Candle kosong'], ['heikin', 'Heikin Ashi'], ['bars', 'Bar'], ['line', 'Garis'], ['area', 'Area']];
 const IC = {
   cursor: 'M5 3L19 12L12 13.5L9 20Z', undo: 'M9 14L4 9L9 4 M4 9H15a5 5 0 0 1 0 10H11', redo: 'M15 14L20 9L15 4 M20 9H9a5 5 0 0 0 0 10H13',
@@ -49,6 +50,7 @@ const state = {
   panes: [{ symbol: 'XAUUSD', broker: 'oanda', tf: '5m', chartType: 'candles', studies: defStudies() }],
   favorites: [],
   watchlist: [['XAUUSD', 'oanda'], ['XAUUSD', 'forexcom'], ['BTCUSD', 'oanda'], ['NAS100', 'forexcom'], ['GBPJPY', 'oanda'], ['AUDUSD', 'oanda'], ['EURUSD', 'oanda'], ['USDJPY', 'forexcom'], ['US30', 'oanda'], ['USDIDR', 'forexcom']],
+  tfFav: ['1m', '5m', '15m', '30m', '1h', '4h', '1D'], customTfs: [],
   magnet: 'off', panelTab: 'tren', styleDefaults: {}, extraDefaults: {}, templates: {}, recent: [],
   sync: { symbol: false, interval: false, crosshair: true, time: false }, cs: {}, indFav: [], indTemplates: [], layouts: [], rail: false, keepAwake: false,
   ...saved,
@@ -160,7 +162,7 @@ class Pane {
     try {
       const d = await ds.candles(cfg.broker, cfg.symbol, cfg.tf, 1500);
       if (seq !== this.seq) return;
-      c.setData(d.candles, { tfMs: TF_MS[cfg.tf], digits: d.digits });
+      c.setData(d.candles, { tfMs: tfMs(cfg.tf), digits: d.digits });
       this.source = d.source;
       if (this.idx === state.active) setSource(d.source);
       this.updateLegend();
@@ -269,7 +271,70 @@ function renderHeader() {
   renderWatchlist();
 }
 $('#symbolBtn').onclick = openSearch;
-$('#tfBtn').onclick = e => popMenu(e.currentTarget, '<div class="mh">Interval</div>' + TFS.map(([v, n]) => `<button class="mi ${act().cfg.tf === v ? 'on' : ''}" data-v="${v}">${n}</button>`).join(''), setTf);
+$('#tfBtn').onclick = () => { togglePanel('tfPanel'); renderTfPanel(); };
+
+// ---------- Panel Interval & Rentang tanggal ----------
+const RANGES = [['1D', '1D', '1m', 1], ['5H', '5H', '5m', 5], ['1Bln', '1Bln', '30m', 31], ['3Bln', '3Bln', '1h', 92], ['6Bln', '6Bln', '2h', 183], ['YTD', 'YTD', '1D', 'ytd'], ['1T', '1T', '1D', 365], ['5T', '5T', '1W', 1826], ['ALL', 'Semua', '1M', 'all']];
+function renderTfPanel() {
+  const cur = act().cfg.tf;
+  const tile = tf => `<button class="tf-tile ${tf === cur ? 'on' : ''}" data-tf="${tf}">${tf}${state.tfFav.includes(tf) ? '<span class="star fav">★</span>' : ''}</button>`;
+  const groups = TF_GROUPS.map(([name, list]) => [name, [...list, ...state.customTfs.filter(c => { const p = parseTf(c); return p && ({ DETIK: 's', MENIT: 'm', JAM: 'h' }[name] === p.unit || (name === 'HARI' && 'DWM'.includes(p.unit))) && !list.includes(c); })]]);
+  $('#tfBody').innerHTML = `<div class="tf-row">${RANGES.map(([k, l]) => `<button class="tf-tile" data-range="${k}">${l}</button>`).join('')}</div>
+    <h2 class="tf-h">Interval</h2>
+    <div class="tf-sec">FAVORIT</div><div class="tf-row">${state.tfFav.map(tile).join('') || '<span class="note">Tekan lama sebuah interval untuk menjadikannya favorit.</span>'}</div>
+    ${groups.map(([n, l]) => `<div class="tf-sec">${n}</div><div class="tf-row">${l.map(tile).join('')}</div>`).join('')}
+    <button class="primary block" data-custom="1">Tambah interval khusus</button>`;
+}
+$('#closeTf').onclick = () => togglePanel('tfPanel', false);
+let tfLong = null, tfLongDone = false;
+$('#tfBody').addEventListener('pointerdown', e => {
+  const t = e.target.closest('[data-tf]'); if (!t) return;
+  clearTimeout(tfLong); tfLongDone = false;
+  tfLong = setTimeout(() => {
+    tfLongDone = true; const tf = t.dataset.tf, on = state.tfFav.includes(tf);
+    try { navigator.vibrate?.(15); } catch { /* */ }
+    popMenu(t, `<div class="mh">${tfName(tf)}</div><button class="mi" data-v="fav">${on ? '☆ Hapus dari favorit' : '★ Tambahkan ke favorit'}</button>${state.customTfs.includes(tf) ? '<button class="mi" data-v="del">Hapus interval khusus</button>' : ''}`, v => {
+      if (v === 'fav') state.tfFav = on ? state.tfFav.filter(x => x !== tf) : [...state.tfFav, tf].sort((a, b) => tfMs(a) - tfMs(b));
+      if (v === 'del') { state.customTfs = state.customTfs.filter(x => x !== tf); state.tfFav = state.tfFav.filter(x => x !== tf); }
+      save(); renderTfPanel();
+    });
+  }, 500);
+});
+for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) $('#tfBody').addEventListener(ev, () => clearTimeout(tfLong));
+$('#tfBody').addEventListener('contextmenu', e => e.preventDefault());
+$('#tfBody').addEventListener('click', e => {
+  if (tfLongDone) { tfLongDone = false; return; }
+  const t = e.target.closest('[data-tf]');
+  if (t) { if (chart().replay || chart().tool === 'replay') replayChangeTf(t.dataset.tf); else setTf(t.dataset.tf); renderTfPanel(); togglePanel('tfPanel', false); return; }
+  const r = e.target.closest('[data-range]'); if (r) return selectRange(r.dataset.range);
+  if (e.target.closest('[data-custom]')) {
+    formCancel = null;
+    openForm('Tambah interval khusus', [
+      { key: 'n', label: 'Angka', type: 'number', value: 7, min: 1, max: 999 },
+      { key: 'u', label: 'Satuan', type: 'select', options: [['s', 'Detik'], ['m', 'Menit'], ['h', 'Jam'], ['D', 'Hari'], ['W', 'Minggu'], ['M', 'Bulan']], value: 'm' },
+    ], v => {
+      const tf = `${Math.round(v.n)}${v.u}`;
+      if (!parseTf(tf)) { toast('Interval tidak valid'); return false; }
+      if (!ALL_TFS.includes(tf) && !state.customTfs.includes(tf)) state.customTfs.push(tf);
+      save(); renderTfPanel(); setTf(tf); togglePanel('tfPanel', false); toast(`Interval ${tf} ditambahkan`);
+    });
+  }
+});
+async function selectRange(k) {
+  const [, , tf, days] = RANGES.find(r => r[0] === k);
+  const p = act(), c = p.chart;
+  if (c.replay || c.tool === 'replay') stopReplay();
+  p.cfg.tf = tf; remember(p.cfg); save(); renderHeader(); renderTfPanel();
+  await p.load();
+  const n = c.candles.length; if (!n) return;
+  const lastT = c.candles[n - 1].t;
+  const from = days === 'all' ? -Infinity : days === 'ytd' ? Date.UTC(new Date(lastT).getUTCFullYear(), 0, 1) : lastT - days * 86400e3;
+  let i0 = 0; while (i0 < n - 1 && c.candles[i0].t < from) i0++;
+  const bars = n - i0 + 2;
+  c.spacing = Math.max(0.4, Math.min(60, c.plot.w / bars));
+  c.scroll = n - 1 + 2; c.autoScale = true; c.invalidate();
+  togglePanel('tfPanel', false);
+}
 
 function setTheme(t) {
   state.theme = t; save();
@@ -301,11 +366,11 @@ $('#bottombar').onclick = e => {
     case 'share': doShare(); break;
   }
 };
-const PANELS = ['drawPanel', 'layoutPanel', 'treePanel', 'alertPanel', 'hubPanel'];
+const PANELS = ['drawPanel', 'layoutPanel', 'tfPanel', 'treePanel', 'alertPanel', 'hubPanel'];
 function togglePanel(id, force) {
   const el = $('#' + id), open = force ?? el.classList.contains('hidden');
   for (const p of PANELS) {
-    const left = ['drawPanel', 'layoutPanel'].includes(p) === ['drawPanel', 'layoutPanel'].includes(id);
+    const L = ['drawPanel', 'layoutPanel', 'tfPanel'], left = L.includes(p) === L.includes(id);
     if (p !== id && left) $('#' + p).classList.add('hidden');
   }
   el.classList.toggle('hidden', !open);
@@ -1026,7 +1091,7 @@ function replayBarAction(e) {
   if (r === 'play') { if (c.tool === 'replay') return startFromSelection(); return setPlaying(!replayTimer); }
   if (r === 'step') return stepReplay();
   if (r === 'speed') return popMenu(b, '<div class="mh">Kecepatan</div>' + [0.5, 1, 2, 3, 5, 10, 25].map(v => `<button class="mi ${v === replaySpeed ? 'on' : ''}" data-v="${v}">${v}x</button>`).join(''), v => { replaySpeed = +v; setPlaying(!!replayTimer); });
-  if (r === 'tf') return popMenu(b, '<div class="mh">Interval</div>' + TFS.map(([v, n]) => `<button class="mi ${act().cfg.tf === v ? 'on' : ''}" data-v="${v}">${n}</button>`).join(''), v => replayChangeTf(v));
+  if (r === 'tf') return popMenu(b, '<div class="mh">Interval</div>' + TFS().map(([v, n]) => `<button class="mi ${act().cfg.tf === v ? 'on' : ''}" data-v="${v}">${v} <span class="x">${n}</span></button>`).join(''), v => replayChangeTf(v));
   if (r === 'set') return openForm('Pengaturan replay', [
     { key: 'speed', label: 'Kecepatan', type: 'select', options: [0.5, 1, 2, 3, 5, 10, 25].map(v => [v, v + 'x']), value: replaySpeed },
     { key: 'units', label: 'Jumlah per order (unit)', type: 'number', value: paper.units(), min: 0.0001, max: 1e9, step: 'any' },

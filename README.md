@@ -70,13 +70,14 @@ Jika kredensial belum diisi, aplikasi memakai **data demo sintetis** (badge oran
 
 - Token OANDA dibuat di portal akun OANDA (Manage API Access).
 - Akses API FOREX.com (AppKey) harus diminta ke FOREX.com. Jika pencarian market otomatis tidak menemukan instrumen, isi `FOREXCOM_MARKET_IDS`, mis. `{"XAUUSD":401153869}`.
-- Timeframe: 1m, 3m, 5m, 15m, 30m, 1j, 2j, 4j, 1H, 1M. (3m diagregasi dari 1m.)
+- **Interval:** detik (5s–30s, OANDA), menit (1m, 2m, 3m, 5m, 10m, 15m, **30m, 45m**), jam (1h–12h), hari/minggu/bulan (1D, 1W, 1M, 3M, 6M, 12M), plus **interval khusus** (mis. 7m, 6h). Interval yang tidak disediakan broker dibentuk dengan menggabungkan candle dari interval lebih kecil (45m dari 15m, 3h dari 1h, bulan dari harian; minggu dimulai Senin).
 - Daftar simbol ada di `public/js/data/symbols.js`; tambahkan simbol baru di sana.
 
 ## Fitur
 
 - **Navigasi seperti aplikasi charting mobile:** Daftar Pantau · Chart · Jelajahi · Menu
 - **Daftar Pantau:** harga & perubahan, ikhtisar simbol (grafik 1H–Seluruh, perubahan hari ini & sepanjang data, poin data penting, rentang 52 minggu, **musiman**, meter **Teknikal** Jual kuat–Beli kuat), tombol *Buka chart*
+- **Panel Interval** (ketuk interval di kiri bawah): Rentang tanggal (1D, 5H, 1Bln, 3Bln, 6Bln, YTD, 1T, 5T, Semua), Favorit (tekan lama interval → ★), Detik, Menit, Jam, Hari, dan *Tambah interval khusus*
 - **Chart:** candle / candle kosong / Heikin Ashi / bar / garis / area; toolbar bawah (simbol, interval, Gambar, Indikator, Layout, Peringatan, Jenis chart, Replay, Pohon objek, Pusat analisis, Undo/Redo, Layar penuh, Bagikan)
 - **Pengaturan chart/simbol:** warna badan/batas/sumbu naik-turun, warnai berdasarkan penutupan sebelumnya, latar, grid, garis harga, hitung mundur, legenda OHLC (ketuk nama simbol di chart)
 - **Layout:** 1, 2, 3, 4, 6, 8 chart (beberapa susunan) dengan **sinkronisasi** simbol, interval, crosshair, dan waktu

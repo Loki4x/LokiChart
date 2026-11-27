@@ -380,3 +380,13 @@ body:not(.replaying) #tradePanel { display: none; }
 #tradePanel .tp-qty { background: transparent; padding: 9px 12px; min-width: 40px; }
 #tradePanel .tp-flat { background: transparent; color: var(--muted); padding: 9px 10px; }
 @media (max-width: 700px) { #tradePanel { right: 8px; } #tradePanel button { padding: 8px 14px; } }
+/* panel interval */
+.tf-body { overflow-y: auto; flex: 1; margin-top: 10px; }
+.tf-row { display: flex; gap: 10px; overflow-x: auto; scrollbar-width: none; padding: 4px 0 14px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.tf-row::-webkit-scrollbar { display: none; }
+.tf-tile { position: relative; flex: none; min-width: 72px; height: 54px; border: 0; border-radius: 10px; background: var(--soft); font-size: 16px; cursor: pointer; padding: 0 14px; }
+.tf-tile.on { background: var(--black); color: var(--bg); }
+.tf-tile .star { position: absolute; right: 6px; top: 2px; color: #ff9800; font-size: 14px; }
+.tf-h { margin: 18px 0 6px; font-size: 19px; }
+.tf-sec { font-size: 13px; color: var(--muted); margin: 12px 0 8px; letter-spacing: .03em; }
+#tfPanel .primary.block { margin: 16px 0 6px; padding: 14px; }

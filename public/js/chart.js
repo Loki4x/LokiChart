@@ -255,7 +255,7 @@ export class Chart {
   }
   zoom(factor, anchorX = this.plot.w) {
     const i = this.xi(anchorX);
-    this.spacing = Math.max(1.5, Math.min(60, this.spacing * factor));
+    this.spacing = Math.max(0.4, Math.min(60, this.spacing * factor));
     this.scroll = i + (this.plot.w - this.spacing / 2 - anchorX) / this.spacing;
     this._clampScroll();
     this.invalidate();
@@ -655,7 +655,7 @@ export class Chart {
         const midp = (dr.pmin + dr.pmax) / 2, half = (dr.pmax - dr.pmin) / 2 * f;
         this.pmin = midp - half; this.pmax = midp + half;
       } else if (dr.type === 'time') {
-        this.spacing = Math.max(1.5, Math.min(60, dr.spacing * Math.exp((x - dr.x) / 150)));
+        this.spacing = Math.max(0.4, Math.min(60, dr.spacing * Math.exp((x - dr.x) / 150)));
         this.scroll = this.scroll; this._clampScroll();
       } else if (dr.type === 'handle') {
         const anc = dr.d.points[dr.k - 1] || dr.d.points[dr.k + 1];
@@ -708,7 +708,7 @@ export class Chart {
         this.zoomStack.push({ spacing: this.spacing, scroll: this.scroll, pmin: this.pmin, pmax: this.pmax, autoScale: this.autoScale });
         const i0 = this.xi(Math.min(dr.x, dr.x0)), i1 = this.xi(Math.max(dr.x, dr.x0));
         const p0 = this.yp(Math.max(dr.y, dr.y0)), p1 = this.yp(Math.min(dr.y, dr.y0));
-        this.spacing = Math.max(1.5, Math.min(60, this.plot.w / Math.max(1, i1 - i0)));
+        this.spacing = Math.max(0.4, Math.min(60, this.plot.w / Math.max(1, i1 - i0)));
         this.scroll = i1 + 0.5;
         if (Math.abs(dr.y - dr.y0) > 10) { this.autoScale = false; this.pmin = p0; this.pmax = p1; }
       }

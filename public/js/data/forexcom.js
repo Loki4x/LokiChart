@@ -1,8 +1,8 @@
 // FOREX.com — GAIN Capital Trading API (REST)
 // Alur: POST /session (login) -> cari MarketId -> GET /market/{id}/barhistory
 const INTERVAL = {
-  60: ['MINUTE', 1], 300: ['MINUTE', 5], 900: ['MINUTE', 15], 1800: ['MINUTE', 30],
-  3600: ['HOUR', 1], 7200: ['HOUR', 2], 14400: ['HOUR', 4], 86400: ['DAY', 1], 604800: ['WEEK', 1],
+  60: ['MINUTE', 1], 120: ['MINUTE', 2], 180: ['MINUTE', 3], 300: ['MINUTE', 5], 600: ['MINUTE', 10], 900: ['MINUTE', 15], 1800: ['MINUTE', 30],
+  3600: ['HOUR', 1], 7200: ['HOUR', 2], 14400: ['HOUR', 4], 28800: ['HOUR', 8], 86400: ['DAY', 1], 604800: ['WEEK', 1],
 };
 
 let session = null; // { token, user }
@@ -65,9 +65,11 @@ const parseDate = s => +String(s).match(/-?\d+/)[0]; // "/Date(1700000000000)/"
 export const forexcom = {
   name: 'forexcom',
   configured: cfg => !!(cfg?.username && cfg?.password && cfg?.appKey),
-  async candles(cfg, sym, tfSec, count, to) {
+  bases: Object.keys(INTERVAL).map(Number),
+  supports: s => !!INTERVAL[s],
+  async candles(cfg, sym, tf, count, to) {
     if (!sym.forexcom) throw new Error(`${sym.symbol} tidak tersedia di FOREX.com`);
-    const iv = INTERVAL[tfSec];
+    const iv = INTERVAL[tf.sec];
     if (!iv) throw new Error('Timeframe tidak didukung FOREX.com');
     const id = await marketId(cfg, sym);
     const json = to
